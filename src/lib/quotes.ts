@@ -1,6 +1,8 @@
 export interface QuoteResult {
   price: number;
   previousClose?: number;
+  dayLow?: number;
+  dayHigh?: number;
   currency?: string;
 }
 

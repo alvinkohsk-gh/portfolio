@@ -10,7 +10,7 @@ import { StockSearch } from "@/components/StockSearch";
 export default function WatchlistPage() {
   const { state, addWatchlistItem, removeWatchlistItem } = usePortfolio();
   const [live, setLive] = useState<
-    Record<string, { price: number; previousClose?: number }>
+    Record<string, { price: number; previousClose?: number; dayLow?: number; dayHigh?: number }>
   >({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +72,8 @@ export default function WatchlistPage() {
                   <th className="px-4 sm:px-5 py-2.5 font-medium">Symbol</th>
                   <th className="px-4 sm:px-5 py-2.5 font-medium text-right">Price</th>
                   <th className="px-4 sm:px-5 py-2.5 font-medium text-right">Change</th>
+                  <th className="px-4 sm:px-5 py-2.5 font-medium text-right">Day Range</th>
+                  <th className="px-4 sm:px-5 py-2.5 font-medium text-right">Last Close</th>
                   <th className="px-4 sm:px-5 py-2.5 font-medium text-right">Actions</th>
                 </tr>
               </thead>
@@ -102,6 +104,19 @@ export default function WatchlistPage() {
                         }`}
                       >
                         {change != null ? formatPercent(changePct!) : "—"}
+                      </td>
+                      <td className="px-4 sm:px-5 py-3 text-right tabular-nums text-neutral-300">
+                        {q?.dayLow != null && q?.dayHigh != null
+                          ? `${formatCurrency(q.dayLow, state.currency)} – ${formatCurrency(
+                              q.dayHigh,
+                              state.currency
+                            )}`
+                          : "—"}
+                      </td>
+                      <td className="px-4 sm:px-5 py-3 text-right tabular-nums text-neutral-300">
+                        {q?.previousClose != null
+                          ? formatCurrency(q.previousClose, state.currency)
+                          : "—"}
                       </td>
                       <td className="px-4 sm:px-5 py-3 text-right">
                         <button
