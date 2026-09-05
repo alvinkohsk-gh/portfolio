@@ -12,6 +12,7 @@ import { SummaryCards } from "@/components/SummaryCards";
 import { AllocationChart } from "@/components/AllocationChart";
 import { PerformanceChart } from "@/components/PerformanceChart";
 import { HoldingsTable } from "@/components/HoldingsTable";
+import { DividendsTable } from "@/components/DividendsTable";
 
 export default function DashboardPage() {
   const { state } = usePortfolio();
@@ -36,6 +37,7 @@ export default function DashboardPage() {
         <AllocationChart holdings={holdings} currency={state.currency} />
       </div>
       <HoldingsTable holdings={holdings} currency={state.currency} />
+      <DividendsTable holdings={holdings} currency={state.currency} />
     </div>
   );
 }
