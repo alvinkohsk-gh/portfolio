@@ -5,6 +5,8 @@ export const dynamic = "force-dynamic";
 interface Quote {
   price: number;
   previousClose?: number;
+  dayLow?: number;
+  dayHigh?: number;
   currency?: string;
   name?: string;
 }
@@ -33,6 +35,8 @@ async function fetchQuote(symbol: string): Promise<Quote | null> {
   return {
     price: meta.regularMarketPrice,
     previousClose: meta.chartPreviousClose ?? meta.previousClose,
+    dayLow: meta.regularMarketDayLow,
+    dayHigh: meta.regularMarketDayHigh,
     currency: meta.currency,
     name: meta.symbol,
   };
