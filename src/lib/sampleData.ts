@@ -11,9 +11,15 @@ const daysAgo = (n: number) => {
 
 export const sampleState: PortfolioState = {
   currency: "USD",
+  portfolios: [
+    { id: "growth", name: "Growth" },
+    { id: "income", name: "Dividend Income" },
+  ],
+  activePortfolioId: "all",
   transactions: [
     {
       id: "seed-1",
+      portfolioId: "growth",
       symbol: "AAPL",
       name: "Apple Inc.",
       type: "BUY",
@@ -24,6 +30,7 @@ export const sampleState: PortfolioState = {
     },
     {
       id: "seed-2",
+      portfolioId: "growth",
       symbol: "AAPL",
       name: "Apple Inc.",
       type: "BUY",
@@ -34,6 +41,7 @@ export const sampleState: PortfolioState = {
     },
     {
       id: "seed-3",
+      portfolioId: "income",
       symbol: "MSFT",
       name: "Microsoft Corporation",
       type: "BUY",
@@ -44,6 +52,7 @@ export const sampleState: PortfolioState = {
     },
     {
       id: "seed-4",
+      portfolioId: "income",
       symbol: "VOO",
       name: "Vanguard S&P 500 ETF",
       type: "BUY",
@@ -54,6 +63,7 @@ export const sampleState: PortfolioState = {
     },
     {
       id: "seed-5",
+      portfolioId: "income",
       symbol: "VOO",
       name: "Vanguard S&P 500 ETF",
       type: "BUY",
@@ -64,6 +74,7 @@ export const sampleState: PortfolioState = {
     },
     {
       id: "seed-6",
+      portfolioId: "growth",
       symbol: "NVDA",
       name: "NVIDIA Corporation",
       type: "BUY",
@@ -74,6 +85,7 @@ export const sampleState: PortfolioState = {
     },
     {
       id: "seed-7",
+      portfolioId: "growth",
       symbol: "NVDA",
       name: "NVIDIA Corporation",
       type: "SELL",
@@ -84,6 +96,7 @@ export const sampleState: PortfolioState = {
     },
     {
       id: "seed-8",
+      portfolioId: "growth",
       symbol: "AAPL",
       name: "Apple Inc.",
       type: "DIVIDEND",
@@ -93,6 +106,7 @@ export const sampleState: PortfolioState = {
     },
     {
       id: "seed-9",
+      portfolioId: "income",
       symbol: "MSFT",
       name: "Microsoft Corporation",
       type: "DIVIDEND",

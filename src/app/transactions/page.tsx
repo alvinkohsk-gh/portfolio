@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { usePortfolio } from "@/lib/PortfolioProvider";
 import { allSymbols } from "@/lib/portfolio";
-import { Transaction } from "@/lib/types";
+import { ALL_PORTFOLIOS, Transaction } from "@/lib/types";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Card } from "@/components/Card";
 import { TransactionModal } from "@/components/TransactionModal";
@@ -22,12 +22,24 @@ export default function TransactionsPage() {
   const [filterSymbol, setFilterSymbol] = useState<string>("ALL");
 
   const symbols = useMemo(() => allSymbols(state), [state]);
+  const showPortfolioColumn = state.activePortfolioId === ALL_PORTFOLIOS;
+  const portfolioName = (id: string) =>
+    state.portfolios.find((p) => p.id === id)?.name ?? "—";
+  const defaultPortfolioId =
+    state.activePortfolioId === ALL_PORTFOLIOS
+      ? state.portfolios[0].id
+      : state.activePortfolioId;
 
   const rows = useMemo(() => {
     return [...state.transactions]
+      .filter(
+        (t) =>
+          state.activePortfolioId === ALL_PORTFOLIOS ||
+          t.portfolioId === state.activePortfolioId
+      )
       .filter((t) => filterSymbol === "ALL" || t.symbol === filterSymbol)
       .sort((a, b) => b.date.localeCompare(a.date));
-  }, [state.transactions, filterSymbol]);
+  }, [state.transactions, state.activePortfolioId, filterSymbol]);
 
   function openAdd() {
     setEditing(null);
@@ -84,6 +96,9 @@ export default function TransactionsPage() {
               <thead>
                 <tr className="border-b border-neutral-800 text-left text-xs text-neutral-500">
                   <th className="px-4 sm:px-5 py-2.5 font-medium">Date</th>
+                  {showPortfolioColumn && (
+                    <th className="px-4 sm:px-5 py-2.5 font-medium">Portfolio</th>
+                  )}
                   <th className="px-4 sm:px-5 py-2.5 font-medium">Type</th>
                   <th className="px-4 sm:px-5 py-2.5 font-medium">Symbol</th>
                   <th className="px-4 sm:px-5 py-2.5 font-medium text-right">Quantity</th>
@@ -106,6 +121,11 @@ export default function TransactionsPage() {
                       <td className="px-4 sm:px-5 py-3 text-neutral-300 whitespace-nowrap">
                         {formatDate(t.date)}
                       </td>
+                      {showPortfolioColumn && (
+                        <td className="px-4 sm:px-5 py-3 text-neutral-300 whitespace-nowrap">
+                          {portfolioName(t.portfolioId)}
+                        </td>
+                      )}
                       <td className="px-4 sm:px-5 py-3">
                         <span
                           className={clsx(
@@ -162,6 +182,8 @@ export default function TransactionsPage() {
         onSubmit={handleSubmit}
         initial={editing}
         knownSymbols={symbols}
+        portfolios={state.portfolios}
+        defaultPortfolioId={defaultPortfolioId}
       />
     </div>
   );

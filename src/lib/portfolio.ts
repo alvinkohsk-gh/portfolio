@@ -1,4 +1,4 @@
-import { Holding, PortfolioState, PortfolioSummary, Transaction } from "./types";
+import { ALL_PORTFOLIOS, Holding, PortfolioState, PortfolioSummary } from "./types";
 
 interface RunningLot {
   quantity: number;
@@ -182,8 +182,15 @@ export function computePerformanceSeries(
   return points;
 }
 
-export function nextTransactionId(): string {
-  return `tx-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+/** Returns a copy of state scoped to one portfolio (or the state as-is for
+ * ALL_PORTFOLIOS), so the existing compute* functions don't need to know
+ * about portfolios at all - they just see a smaller transaction list. */
+export function scopedToPortfolio(state: PortfolioState, portfolioId: string): PortfolioState {
+  if (portfolioId === ALL_PORTFOLIOS) return state;
+  return {
+    ...state,
+    transactions: state.transactions.filter((t) => t.portfolioId === portfolioId),
+  };
 }
 
 export function allSymbols(state: PortfolioState): string[] {
@@ -202,15 +209,4 @@ export function symbolNames(state: PortfolioState): Record<string, string> {
     if (w.name && !names[w.symbol]) names[w.symbol] = w.name;
   }
   return names;
-}
-
-export function emptyTransaction(): Omit<Transaction, "id"> {
-  return {
-    symbol: "",
-    type: "BUY",
-    date: new Date().toISOString().slice(0, 10),
-    quantity: 0,
-    price: 0,
-    fees: 0,
-  };
 }

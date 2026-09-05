@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Transaction, TransactionType } from "@/lib/types";
+import { Portfolio, Transaction, TransactionType } from "@/lib/types";
 
 interface Props {
   open: boolean;
@@ -9,21 +9,27 @@ interface Props {
   onSubmit: (tx: Omit<Transaction, "id">) => void;
   initial?: Transaction | null;
   knownSymbols: string[];
+  portfolios: Portfolio[];
+  defaultPortfolioId: string;
 }
 
-const emptyForm = {
-  symbol: "",
-  name: "",
-  type: "BUY" as TransactionType,
-  date: new Date().toISOString().slice(0, 10),
-  quantity: "",
-  price: "",
-  fees: "",
-  notes: "",
-};
+function emptyForm(defaultPortfolioId: string) {
+  return {
+    portfolioId: defaultPortfolioId,
+    symbol: "",
+    name: "",
+    type: "BUY" as TransactionType,
+    date: new Date().toISOString().slice(0, 10),
+    quantity: "",
+    price: "",
+    fees: "",
+    notes: "",
+  };
+}
 
 function formFromTransaction(tx: Transaction) {
   return {
+    portfolioId: tx.portfolioId,
     symbol: tx.symbol,
     name: tx.name ?? "",
     type: tx.type,
@@ -39,7 +45,15 @@ function formFromTransaction(tx: Transaction) {
 // unmounts it on close - so a fresh useState initializer (keyed on
 // `initial`'s identity below) is enough to reset/seed the form, no effect
 // needed.
-export function TransactionModal({ open, onClose, onSubmit, initial, knownSymbols }: Props) {
+export function TransactionModal({
+  open,
+  onClose,
+  onSubmit,
+  initial,
+  knownSymbols,
+  portfolios,
+  defaultPortfolioId,
+}: Props) {
   if (!open) return null;
   return (
     <TransactionForm
@@ -48,6 +62,8 @@ export function TransactionModal({ open, onClose, onSubmit, initial, knownSymbol
       onSubmit={onSubmit}
       initial={initial}
       knownSymbols={knownSymbols}
+      portfolios={portfolios}
+      defaultPortfolioId={defaultPortfolioId}
     />
   );
 }
@@ -57,13 +73,18 @@ function TransactionForm({
   onSubmit,
   initial,
   knownSymbols,
+  portfolios,
+  defaultPortfolioId,
 }: Omit<Props, "open">) {
-  const [form, setForm] = useState(initial ? formFromTransaction(initial) : emptyForm);
+  const [form, setForm] = useState(
+    initial ? formFromTransaction(initial) : emptyForm(defaultPortfolioId)
+  );
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.symbol.trim() || !form.quantity || !form.price) return;
     onSubmit({
+      portfolioId: form.portfolioId,
       symbol: form.symbol.trim().toUpperCase(),
       name: form.name.trim() || undefined,
       type: form.type,
@@ -83,6 +104,21 @@ function TransactionForm({
           {initial ? "Edit transaction" : "Add transaction"}
         </h3>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+          <label className="flex flex-col gap-1 text-xs text-neutral-400">
+            Portfolio
+            <select
+              value={form.portfolioId}
+              onChange={(e) => setForm((f) => ({ ...f, portfolioId: e.target.value }))}
+              className="rounded-md bg-neutral-950 border border-neutral-700 px-2.5 py-2 text-sm text-white"
+            >
+              {portfolios.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
           <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col gap-1 text-xs text-neutral-400">
               Type

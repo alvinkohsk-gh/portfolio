@@ -7,6 +7,7 @@ import clsx from "clsx";
 import { usePortfolio } from "@/lib/PortfolioProvider";
 import { allSymbols } from "@/lib/portfolio";
 import { fetchQuotes } from "@/lib/quotes";
+import { PortfolioSelector } from "./PortfolioSelector";
 
 const links = [
   { href: "/", label: "Dashboard" },
@@ -45,7 +46,7 @@ export function NavBar() {
 
   return (
     <header className="border-b border-neutral-800 sticky top-0 z-10 bg-neutral-950/90 backdrop-blur">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 min-h-16 py-2 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-8">
           <span className="font-semibold text-lg tracking-tight text-white">
             Port<span className="text-emerald-400">folio</span>
@@ -73,6 +74,7 @@ export function NavBar() {
         </div>
         <div className="flex items-center gap-2">
           {error && <span className="hidden md:inline text-xs text-amber-400">{error}</span>}
+          <PortfolioSelector />
           <button
             onClick={handleRefresh}
             disabled={refreshing}

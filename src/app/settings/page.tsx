@@ -6,14 +6,25 @@ import { allSymbols, computeHoldings } from "@/lib/portfolio";
 import { formatCurrency } from "@/lib/format";
 import { Card, CardTitle } from "@/components/Card";
 import { PortfolioState } from "@/lib/types";
+import { migrate } from "@/lib/store";
 
 const CURRENCIES = ["USD", "SGD", "EUR", "GBP", "HKD", "JPY", "AUD", "CAD"];
 
 export default function SettingsPage() {
-  const { state, setCurrency, setPrice, replaceState, resetToSample, clearAll } =
-    usePortfolio();
+  const {
+    state,
+    setCurrency,
+    setPrice,
+    replaceState,
+    resetToSample,
+    clearAll,
+    addPortfolio,
+    renamePortfolio,
+    deletePortfolio,
+  } = usePortfolio();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [newPortfolioName, setNewPortfolioName] = useState("");
 
   const symbols = allSymbols(state);
   const holdings = computeHoldings(state);
@@ -43,7 +54,7 @@ export default function SettingsPage() {
         if (!Array.isArray(parsed.transactions) || typeof parsed.prices !== "object") {
           throw new Error("Invalid file shape");
         }
-        replaceState(parsed);
+        replaceState(migrate(parsed));
         setImportError(null);
       } catch {
         setImportError("Couldn't read that file. Make sure it's a JSON export from this app.");
@@ -73,6 +84,60 @@ export default function SettingsPage() {
         <p className="mt-2 text-xs text-neutral-500">
           This relabels amounts; it does not convert values between currencies.
         </p>
+      </Card>
+
+      <Card>
+        <CardTitle>Portfolios</CardTitle>
+        <div className="flex flex-col gap-2">
+          {state.portfolios.map((p) => {
+            const count = state.transactions.filter((t) => t.portfolioId === p.id).length;
+            return (
+              <PortfolioRow
+                key={p.id}
+                name={p.name}
+                transactionCount={count}
+                canDelete={state.portfolios.length > 1}
+                onRename={(name) => renamePortfolio(p.id, name)}
+                onDelete={() => {
+                  if (
+                    confirm(
+                      count > 0
+                        ? `Delete "${p.name}" and its ${count} transaction${
+                            count === 1 ? "" : "s"
+                          }? This can't be undone.`
+                        : `Delete "${p.name}"?`
+                    )
+                  ) {
+                    deletePortfolio(p.id);
+                  }
+                }}
+              />
+            );
+          })}
+        </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const name = newPortfolioName.trim();
+            if (!name) return;
+            addPortfolio(name);
+            setNewPortfolioName("");
+          }}
+          className="mt-3 flex items-center gap-2"
+        >
+          <input
+            value={newPortfolioName}
+            onChange={(e) => setNewPortfolioName(e.target.value)}
+            placeholder="New portfolio name"
+            className="w-48 rounded-md bg-neutral-950 border border-neutral-700 px-2.5 py-1.5 text-sm text-white"
+          />
+          <button
+            type="submit"
+            className="text-xs font-medium text-emerald-400 hover:text-emerald-300"
+          >
+            Add portfolio
+          </button>
+        </form>
       </Card>
 
       <Card>
@@ -140,7 +205,7 @@ export default function SettingsPage() {
           </button>
           <button
             onClick={() => {
-              if (confirm("This will permanently delete all transactions, prices, and watchlist items. Continue?")) {
+              if (confirm("This will permanently delete all transactions, prices, watchlist items, and portfolios. Continue?")) {
                 clearAll();
               }
             }}
@@ -150,6 +215,52 @@ export default function SettingsPage() {
           </button>
         </div>
       </Card>
+    </div>
+  );
+}
+
+function PortfolioRow({
+  name,
+  transactionCount,
+  canDelete,
+  onRename,
+  onDelete,
+}: {
+  name: string;
+  transactionCount: number;
+  canDelete: boolean;
+  onRename: (name: string) => void;
+  onDelete: () => void;
+}) {
+  const [value, setValue] = useState(name);
+  const dirty = value.trim() !== name && value.trim().length > 0;
+
+  return (
+    <div className="flex items-center gap-3">
+      <input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        className="w-48 rounded-md bg-neutral-950 border border-neutral-700 px-2.5 py-1.5 text-sm text-white"
+      />
+      <span className="text-xs text-neutral-500 w-20">
+        {transactionCount} tx{transactionCount === 1 ? "" : "s"}
+      </span>
+      {dirty && (
+        <button
+          onClick={() => onRename(value.trim())}
+          className="text-xs font-medium text-emerald-400 hover:text-emerald-300"
+        >
+          Save
+        </button>
+      )}
+      <button
+        onClick={onDelete}
+        disabled={!canDelete}
+        title={canDelete ? undefined : "At least one portfolio is required"}
+        className="ml-auto text-xs font-medium text-rose-500 hover:text-rose-400 disabled:opacity-30 disabled:cursor-not-allowed"
+      >
+        Delete
+      </button>
     </div>
   );
 }

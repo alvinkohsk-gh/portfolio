@@ -1,7 +1,13 @@
 export type TransactionType = "BUY" | "SELL" | "DIVIDEND";
 
+export interface Portfolio {
+  id: string;
+  name: string;
+}
+
 export interface Transaction {
   id: string;
+  portfolioId: string;
   symbol: string;
   name?: string;
   type: TransactionType;
@@ -28,11 +34,16 @@ export interface WatchlistItem {
   name?: string;
 }
 
+/** Sentinel activePortfolioId meaning "show every portfolio combined". */
+export const ALL_PORTFOLIOS = "all";
+
 export interface PortfolioState {
   transactions: Transaction[];
   prices: Record<string, PriceInfo>;
   watchlist: WatchlistItem[];
   currency: string;
+  portfolios: Portfolio[];
+  activePortfolioId: string;
 }
 
 export interface Holding {
