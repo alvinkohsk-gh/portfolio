@@ -5,11 +5,10 @@ import { usePortfolio } from "@/lib/PortfolioProvider";
 import { fetchQuotes } from "@/lib/quotes";
 import { formatCurrency, formatDateTime, formatPercent, gainColorClass } from "@/lib/format";
 import { Card } from "@/components/Card";
+import { StockSearch } from "@/components/StockSearch";
 
 export default function WatchlistPage() {
   const { state, addWatchlistItem, removeWatchlistItem } = usePortfolio();
-  const [symbol, setSymbol] = useState("");
-  const [name, setName] = useState("");
   const [live, setLive] = useState<
     Record<string, { price: number; previousClose?: number }>
   >({});
@@ -17,13 +16,8 @@ export default function WatchlistPage() {
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
 
-  async function handleAdd(e: React.FormEvent) {
-    e.preventDefault();
-    const sym = symbol.trim().toUpperCase();
-    if (!sym) return;
-    addWatchlistItem({ symbol: sym, name: name.trim() || undefined });
-    setSymbol("");
-    setName("");
+  function handleAdd(result: { symbol: string; name?: string }) {
+    addWatchlistItem({ symbol: result.symbol, name: result.name });
   }
 
   async function handleRefresh() {
@@ -58,33 +52,11 @@ export default function WatchlistPage() {
       </div>
 
       <Card>
-        <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-xs text-neutral-400">
-            Symbol
-            <input
-              value={symbol}
-              onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-              placeholder="TSLA or D05.SI"
-              className="rounded-md bg-neutral-950 border border-neutral-700 px-2.5 py-2 text-sm text-white w-32"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-neutral-400">
-            Name (optional)
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Tesla, Inc."
-              className="rounded-md bg-neutral-950 border border-neutral-700 px-2.5 py-2 text-sm text-white w-56"
-            />
-          </label>
-          <button
-            type="submit"
-            className="px-3 py-2 rounded-md text-sm font-medium bg-neutral-800 hover:bg-neutral-700 text-white"
-          >
-            Add to watchlist
-          </button>
-          {error && <span className="text-xs text-amber-400">{error}</span>}
-        </form>
+        <label className="flex flex-col gap-1 text-xs text-neutral-400">
+          Add to watchlist
+          <StockSearch onSelect={handleAdd} />
+        </label>
+        {error && <p className="mt-2 text-xs text-amber-400">{error}</p>}
       </Card>
 
       <Card className="p-0 overflow-hidden">
