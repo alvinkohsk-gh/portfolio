@@ -20,6 +20,7 @@ export function usePortfolio() {
     deleteTransaction: store.deleteTransaction,
     setPrice: store.setPrice,
     setLivePrices: store.setLivePrices,
+    setDividendHistory: store.setDividendHistory,
     addWatchlistItem: store.addWatchlistItem,
     removeWatchlistItem: store.removeWatchlistItem,
     setCurrency: store.setCurrency,

@@ -34,6 +34,13 @@ export interface WatchlistItem {
   name?: string;
 }
 
+/** One historical per-share cash dividend payment for a symbol, as fetched
+ * from an external price/dividend provider. */
+export interface DividendEvent {
+  date: string; // ISO date, yyyy-mm-dd - the ex-dividend date
+  amount: number; // cash amount per share
+}
+
 /** Sentinel activePortfolioId meaning "show every portfolio combined". */
 export const ALL_PORTFOLIOS = "all";
 
@@ -44,6 +51,9 @@ export interface PortfolioState {
   currency: string;
   portfolios: Portfolio[];
   activePortfolioId: string;
+  /** Fetched dividend-history cache per symbol, used to estimate lifetime
+   * dividends for periods without a manually logged DIVIDEND transaction. */
+  dividendHistory: Record<string, DividendEvent[]>;
 }
 
 export interface Holding {
@@ -64,6 +74,10 @@ export interface Holding {
   weight: number;
   realizedGain: number;
   dividends: number;
+  /** Portion of `dividends` estimated from fetched dividend history for
+   * periods without a manually logged DIVIDEND transaction, rather than
+   * entered by hand. Included in `dividends`, broken out here for display. */
+  estimatedDividends: number;
   /** Capital gain plus dividends received on this holding. */
   totalReturn: number;
   totalReturnPct: number;

@@ -1,5 +1,6 @@
 import {
   ALL_PORTFOLIOS,
+  DividendEvent,
   Portfolio,
   PortfolioState,
   PriceInfo,
@@ -22,6 +23,7 @@ const emptyState: PortfolioState = {
   currency: "USD",
   portfolios: defaultPortfolios(),
   activePortfolioId: ALL_PORTFOLIOS,
+  dividendHistory: {},
 };
 
 let state: PortfolioState = emptyState;
@@ -46,6 +48,7 @@ export function migrate(parsed: PortfolioState): PortfolioState {
     transactions: parsed.transactions.map((t) =>
       t.portfolioId ? t : { ...t, portfolioId: fallbackId }
     ),
+    dividendHistory: parsed.dividendHistory ?? {},
   };
 }
 
@@ -147,6 +150,15 @@ export function setLivePrices(
   commit({ ...state, prices: nextPrices });
 }
 
+/** Merges freshly fetched dividend history into the cache, keyed by symbol.
+ * Symbols not present in `history` keep whatever was cached before. */
+export function setDividendHistory(history: Record<string, DividendEvent[]>) {
+  commit({
+    ...state,
+    dividendHistory: { ...state.dividendHistory, ...history },
+  });
+}
+
 export function addWatchlistItem(item: WatchlistItem) {
   if (state.watchlist.some((w) => w.symbol === item.symbol)) return;
   commit({ ...state, watchlist: [...state.watchlist, item] });
@@ -205,5 +217,6 @@ export function clearAll() {
     currency: state.currency,
     portfolios: defaultPortfolios(),
     activePortfolioId: ALL_PORTFOLIOS,
+    dividendHistory: {},
   });
 }
