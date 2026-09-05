@@ -68,6 +68,10 @@ export function computeHoldings(state: PortfolioState): Holding[] {
       previousClose != null && previousClose > 0
         ? ((currentPrice - previousClose) / previousClose) * 100
         : 0;
+    const totalReturn = gain + lot.dividends;
+    const totalReturnPct = costBasis > 0 ? (totalReturn / costBasis) * 100 : 0;
+    const dividendAdjustedAvgCost =
+      lot.quantity > 0 ? lot.avgCost - lot.dividends / lot.quantity : lot.avgCost;
 
     holdings.push({
       symbol,
@@ -87,6 +91,9 @@ export function computeHoldings(state: PortfolioState): Holding[] {
       weight: 0, // filled in below
       realizedGain: lot.realizedGain,
       dividends: lot.dividends,
+      totalReturn,
+      totalReturnPct,
+      dividendAdjustedAvgCost,
       firstBuyDate: lot.firstBuyDate,
     });
   }

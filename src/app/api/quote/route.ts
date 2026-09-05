@@ -52,7 +52,14 @@ export async function GET(req: NextRequest) {
   await Promise.all(
     symbols.map(async (symbol) => {
       try {
-        const quote = await fetchQuote(symbol);
+        let quote = await fetchQuote(symbol);
+        // Bare tickers (no exchange suffix) default to US exchanges on
+        // Yahoo Finance. Fall back to the SGX (.SI) suffix so SGX-listed
+        // counters (e.g. "D05" for DBS) resolve without the user having to
+        // know Yahoo's suffix convention.
+        if (!quote && !symbol.includes(".")) {
+          quote = await fetchQuote(`${symbol}.SI`);
+        }
         if (quote) {
           quotes[symbol] = quote;
         } else {

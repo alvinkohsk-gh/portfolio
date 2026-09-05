@@ -53,6 +53,12 @@ export interface Holding {
   weight: number;
   realizedGain: number;
   dividends: number;
+  /** Capital gain plus dividends received on this holding. */
+  totalReturn: number;
+  totalReturnPct: number;
+  /** Average cost per share minus dividends received per share held -
+   * how much of the original cost basis dividends have paid back. */
+  dividendAdjustedAvgCost: number;
   firstBuyDate?: string;
 }
 

@@ -12,7 +12,16 @@ import {
 } from "@/lib/format";
 import { Card, CardTitle } from "./Card";
 
-type SortKey = "symbol" | "marketValue" | "gain" | "gainPct" | "dayChange" | "weight";
+type SortKey =
+  | "symbol"
+  | "marketValue"
+  | "gain"
+  | "gainPct"
+  | "dividends"
+  | "totalReturn"
+  | "dividendAdjustedAvgCost"
+  | "dayChange"
+  | "weight";
 
 export function HoldingsTable({
   holdings,
@@ -48,6 +57,9 @@ export function HoldingsTable({
     { key: "marketValue", label: "Value", align: "right" },
     { key: "gain", label: "Gain / Loss", align: "right" },
     { key: "gainPct", label: "Gain %", align: "right" },
+    { key: "dividends", label: "Dividends", align: "right" },
+    { key: "totalReturn", label: "Profit + Div.", align: "right" },
+    { key: "dividendAdjustedAvgCost", label: "Adj. Avg Cost", align: "right" },
     { key: "dayChange", label: "Today", align: "right" },
     { key: "weight", label: "Weight", align: "right" },
   ];
@@ -117,6 +129,20 @@ export function HoldingsTable({
                     )}`}
                   >
                     {formatPercent(h.gainPct)}
+                  </td>
+                  <td className="px-4 sm:px-5 py-3 text-right tabular-nums text-neutral-300">
+                    {h.dividends > 0 ? formatCurrency(h.dividends, currency) : "—"}
+                  </td>
+                  <td
+                    className={`px-4 sm:px-5 py-3 text-right tabular-nums ${gainColorClass(
+                      h.totalReturn
+                    )}`}
+                  >
+                    <div>{formatSignedCurrency(h.totalReturn, currency)}</div>
+                    <div className="text-xs">{formatPercent(h.totalReturnPct)}</div>
+                  </td>
+                  <td className="px-4 sm:px-5 py-3 text-right tabular-nums text-neutral-300">
+                    {formatCurrency(h.dividendAdjustedAvgCost, currency)}
                   </td>
                   <td
                     className={`px-4 sm:px-5 py-3 text-right tabular-nums ${gainColorClass(

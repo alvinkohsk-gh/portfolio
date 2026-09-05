@@ -64,7 +64,7 @@ export default function WatchlistPage() {
             <input
               value={symbol}
               onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-              placeholder="TSLA"
+              placeholder="TSLA or D05.SI"
               className="rounded-md bg-neutral-950 border border-neutral-700 px-2.5 py-2 text-sm text-white w-32"
             />
           </label>

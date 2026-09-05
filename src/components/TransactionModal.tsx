@@ -115,7 +115,7 @@ function TransactionForm({
               list="known-symbols"
               value={form.symbol}
               onChange={(e) => setForm((f) => ({ ...f, symbol: e.target.value.toUpperCase() }))}
-              placeholder="AAPL"
+              placeholder="AAPL or D05.SI"
               required
               className="rounded-md bg-neutral-950 border border-neutral-700 px-2.5 py-2 text-sm text-white uppercase"
             />
@@ -124,6 +124,9 @@ function TransactionForm({
                 <option key={s} value={s} />
               ))}
             </datalist>
+            <span className="text-[11px] text-neutral-600 normal-case">
+              SGX counters resolve with or without the .SI suffix (e.g. D05 or D05.SI for DBS).
+            </span>
           </label>
 
           <label className="flex flex-col gap-1 text-xs text-neutral-400">
