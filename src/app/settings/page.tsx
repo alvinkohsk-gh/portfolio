@@ -5,8 +5,13 @@ import { usePortfolio } from "@/lib/PortfolioProvider";
 import { allSymbols, computeHoldings } from "@/lib/portfolio";
 import { formatCurrency } from "@/lib/format";
 import { Card, CardTitle } from "@/components/Card";
-import { PortfolioState } from "@/lib/types";
+import { Portfolio, PortfolioState, Transaction } from "@/lib/types";
 import { migrate } from "@/lib/store";
+import {
+  ImportedTransaction,
+  parseIbkrTransactionsCsv,
+  partitionNewTransactions,
+} from "@/lib/ibkrImport";
 
 const CURRENCIES = ["USD", "SGD", "EUR", "GBP", "HKD", "JPY", "AUD", "CAD"];
 
@@ -162,6 +167,11 @@ export default function SettingsPage() {
         )}
       </Card>
 
+      <BrokerImportCard
+        portfolios={state.portfolios}
+        existingTransactions={state.transactions}
+      />
+
       <Card>
         <CardTitle>Backup &amp; restore</CardTitle>
         <div className="flex flex-wrap gap-2">
@@ -296,5 +306,160 @@ function ManualPriceRow({
         Save
       </button>
     </div>
+  );
+}
+
+const SKIPPED_TYPE_LABELS: Record<string, string> = {
+  "Debit Interest": "interest/borrow fees",
+  "Credit Interest": "interest credits",
+  "Other Fee": "other fees",
+  "Sales Tax": "sales tax",
+  Adjustment: "FX translation adjustments",
+  "Forex Trade Component": "currency conversions",
+};
+
+interface ImportPreview {
+  toAdd: ImportedTransaction[];
+  duplicateCount: number;
+  skippedByType: Record<string, number>;
+}
+
+/** Imports an Interactive Brokers "Transaction History" CSV (Account
+ * Management > Reports > Statements > Activity) as BUY/SELL/DIVIDEND
+ * transactions on a chosen portfolio. Parsing happens entirely client-side,
+ * consistent with this app never sending portfolio data to a server. */
+function BrokerImportCard({
+  portfolios,
+  existingTransactions,
+}: {
+  portfolios: Portfolio[];
+  existingTransactions: Transaction[];
+}) {
+  const { importTransactions } = usePortfolio();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [portfolioId, setPortfolioId] = useState(portfolios[0]?.id ?? "");
+  const [preview, setPreview] = useState<ImportPreview | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [imported, setImported] = useState<number | null>(null);
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    setImported(null);
+    setFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const { transactions, skippedByType } = parseIbkrTransactionsCsv(
+          String(reader.result)
+        );
+        if (transactions.length === 0) {
+          setPreview(null);
+          setError("No Buy/Sell/Dividend rows found in that file.");
+          return;
+        }
+        const { toAdd, duplicateCount } = partitionNewTransactions(
+          transactions,
+          existingTransactions
+        );
+        setPreview({ toAdd, duplicateCount, skippedByType });
+      } catch {
+        setPreview(null);
+        setError("Couldn't read that file. Make sure it's an IBKR Transaction History CSV export.");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }
+
+  function handleImport() {
+    if (!preview || preview.toAdd.length === 0 || !portfolioId) return;
+    importTransactions(preview.toAdd.map((t) => ({ ...t, portfolioId })));
+    setImported(preview.toAdd.length);
+    setPreview(null);
+    setFileName(null);
+  }
+
+  const skippedEntries = preview
+    ? Object.entries(preview.skippedByType).filter(([, count]) => count > 0)
+    : [];
+  const skippedTotal = skippedEntries.reduce((sum, [, count]) => sum + count, 0);
+
+  return (
+    <Card>
+      <CardTitle>Import from broker</CardTitle>
+      <p className="text-xs text-neutral-500 mb-3">
+        Import Buy/Sell trades and dividends from an Interactive Brokers
+        &quot;Transaction History&quot; CSV export (Account Management &gt;
+        Reports &gt; Statements &gt; Activity). Re-importing an overlapping
+        date range skips anything already added.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={portfolioId}
+          onChange={(e) => setPortfolioId(e.target.value)}
+          className="rounded-md bg-neutral-950 border border-neutral-700 px-2.5 py-2 text-sm text-white"
+        >
+          {portfolios.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="px-3 py-2 rounded-md text-sm font-medium bg-neutral-800 hover:bg-neutral-700 text-white"
+        >
+          Choose IBKR CSV
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,text/csv"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+        {fileName && <span className="text-xs text-neutral-500">{fileName}</span>}
+      </div>
+
+      {error && <p className="mt-2 text-xs text-rose-400">{error}</p>}
+
+      {imported != null && (
+        <p className="mt-2 text-xs text-emerald-400">
+          Imported {imported} transaction{imported === 1 ? "" : "s"}.
+        </p>
+      )}
+
+      {preview && (
+        <div className="mt-3 rounded-md border border-neutral-800 p-3 text-sm">
+          <p className="text-neutral-300">
+            Found <span className="text-white font-medium">{preview.toAdd.length}</span>{" "}
+            new transaction{preview.toAdd.length === 1 ? "" : "s"} to import
+            {preview.duplicateCount > 0 && (
+              <> ({preview.duplicateCount} already imported, skipped)</>
+            )}
+            .
+          </p>
+          {skippedTotal > 0 && (
+            <p className="mt-1 text-xs text-neutral-500">
+              Not imported ({skippedTotal} row{skippedTotal === 1 ? "" : "s"} - not tied to a
+              holding):{" "}
+              {skippedEntries
+                .map(([type, count]) => `${count} ${SKIPPED_TYPE_LABELS[type] ?? type}`)
+                .join(", ")}
+            </p>
+          )}
+          <button
+            onClick={handleImport}
+            disabled={preview.toAdd.length === 0 || !portfolioId}
+            className="mt-3 px-3 py-2 rounded-md text-sm font-medium bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white"
+          >
+            Import {preview.toAdd.length} transaction{preview.toAdd.length === 1 ? "" : "s"}
+          </button>
+        </div>
+      )}
+    </Card>
   );
 }

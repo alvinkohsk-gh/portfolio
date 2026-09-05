@@ -16,6 +16,7 @@ export function usePortfolio() {
   return {
     state,
     addTransaction: store.addTransaction,
+    importTransactions: store.importTransactions,
     updateTransaction: store.updateTransaction,
     deleteTransaction: store.deleteTransaction,
     setPrice: store.setPrice,

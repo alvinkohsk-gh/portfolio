@@ -105,6 +105,14 @@ export function addTransaction(tx: Omit<Transaction, "id">) {
   commit({ ...state, transactions: [...state.transactions, { ...tx, id }] });
 }
 
+export function importTransactions(txs: Omit<Transaction, "id">[]) {
+  const withIds = txs.map((t, i) => ({
+    ...t,
+    id: `tx-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 8)}`,
+  }));
+  commit({ ...state, transactions: [...state.transactions, ...withIds] });
+}
+
 export function updateTransaction(id: string, tx: Omit<Transaction, "id">) {
   commit({
     ...state,
