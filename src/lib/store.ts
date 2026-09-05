@@ -3,19 +3,26 @@ import { sampleState } from "./sampleData";
 
 const STORAGE_KEY = "portfolio-tracker:v1";
 
-let state: PortfolioState = sampleState;
+const emptyState: PortfolioState = {
+  transactions: [],
+  prices: {},
+  watchlist: [],
+  currency: "USD",
+};
+
+let state: PortfolioState = emptyState;
 let initialized = false;
 const listeners = new Set<() => void>();
 
 function readFromStorage(): PortfolioState {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return sampleState;
+    if (!raw) return emptyState;
     const parsed = JSON.parse(raw) as PortfolioState;
-    if (!parsed.transactions || !parsed.prices || !parsed.watchlist) return sampleState;
+    if (!parsed.transactions || !parsed.prices || !parsed.watchlist) return emptyState;
     return parsed;
   } catch {
-    return sampleState;
+    return emptyState;
   }
 }
 
@@ -52,7 +59,7 @@ export function getSnapshot(): PortfolioState {
 }
 
 export function getServerSnapshot(): PortfolioState {
-  return sampleState;
+  return emptyState;
 }
 
 export function addTransaction(tx: Omit<Transaction, "id">) {

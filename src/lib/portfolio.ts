@@ -139,6 +139,8 @@ export function computePerformanceSeries(
     .filter((t) => t.type !== "DIVIDEND")
     .sort((a, b) => a.date.localeCompare(b.date));
 
+  if (sorted.length === 0) return [];
+
   const qtyBySymbol = new Map<string, number>();
   let invested = 0;
   const points: PerformancePoint[] = [];
