@@ -1,18 +1,51 @@
-import { ALL_PORTFOLIOS, Holding, PortfolioState, PortfolioSummary } from "./types";
+import { ALL_PORTFOLIOS, DividendEvent, Holding, PortfolioState, PortfolioSummary } from "./types";
 
 interface RunningLot {
   quantity: number;
   avgCost: number;
   realizedGain: number;
   dividends: number;
+  estimatedDividends: number;
   name?: string;
   firstBuyDate?: string;
+}
+
+interface QuantityPoint {
+  date: string;
+  quantity: number;
+}
+
+/** Given how many shares were held on each date (built from BUY/SELL
+ * history) and a symbol's historical per-share dividend payments, estimates
+ * the dividend income the holder would have earned - filling in for periods
+ * where the user hasn't manually logged a DIVIDEND transaction. A payment
+ * that lands on a date already covered by a manual entry is skipped so it
+ * isn't counted twice. */
+function estimateDividendIncome(
+  timeline: QuantityPoint[],
+  events: DividendEvent[],
+  manualDates: Set<string>
+): number {
+  if (timeline.length === 0 || events.length === 0) return 0;
+  let total = 0;
+  for (const event of events) {
+    if (manualDates.has(event.date)) continue;
+    let quantity = 0;
+    for (const point of timeline) {
+      if (point.date > event.date) break;
+      quantity = point.quantity;
+    }
+    if (quantity > 0) total += quantity * event.amount;
+  }
+  return total;
 }
 
 /** Computes current holdings from the full transaction history using the
  * average-cost method (the same approach most simple trackers use). */
 export function computeHoldings(state: PortfolioState): Holding[] {
   const bySymbol = new Map<string, RunningLot>();
+  const timelines = new Map<string, QuantityPoint[]>();
+  const manualDividendDates = new Map<string, Set<string>>();
   const sorted = [...state.transactions].sort((a, b) =>
     a.date.localeCompare(b.date)
   );
@@ -23,6 +56,7 @@ export function computeHoldings(state: PortfolioState): Holding[] {
       avgCost: 0,
       realizedGain: 0,
       dividends: 0,
+      estimatedDividends: 0,
       name: tx.name,
     };
     if (tx.name) lot.name = tx.name;
@@ -35,6 +69,7 @@ export function computeHoldings(state: PortfolioState): Holding[] {
       lot.avgCost = newQuantity > 0 ? (totalCostBefore + addedCost) / newQuantity : 0;
       lot.quantity = newQuantity;
       if (!lot.firstBuyDate) lot.firstBuyDate = tx.date;
+      pushQuantityPoint(timelines, tx.symbol, tx.date, lot.quantity);
     } else if (tx.type === "SELL") {
       const fees = tx.fees ?? 0;
       const sellQty = Math.min(tx.quantity, lot.quantity);
@@ -44,8 +79,12 @@ export function computeHoldings(state: PortfolioState): Holding[] {
         lot.quantity = 0;
         lot.avgCost = 0;
       }
+      pushQuantityPoint(timelines, tx.symbol, tx.date, lot.quantity);
     } else if (tx.type === "DIVIDEND") {
       lot.dividends += tx.price;
+      const dates = manualDividendDates.get(tx.symbol) ?? new Set<string>();
+      dates.add(tx.date);
+      manualDividendDates.set(tx.symbol, dates);
     }
 
     bySymbol.set(tx.symbol, lot);
@@ -53,6 +92,16 @@ export function computeHoldings(state: PortfolioState): Holding[] {
 
   const holdings: Holding[] = [];
   for (const [symbol, lot] of bySymbol.entries()) {
+    const history = state.dividendHistory[symbol];
+    if (history && history.length > 0) {
+      lot.estimatedDividends = estimateDividendIncome(
+        timelines.get(symbol) ?? [],
+        history,
+        manualDividendDates.get(symbol) ?? new Set()
+      );
+      lot.dividends += lot.estimatedDividends;
+    }
+
     if (lot.quantity <= 0 && lot.realizedGain === 0 && lot.dividends === 0) continue;
 
     const priceInfo = state.prices[symbol];
@@ -91,6 +140,7 @@ export function computeHoldings(state: PortfolioState): Holding[] {
       weight: 0, // filled in below
       realizedGain: lot.realizedGain,
       dividends: lot.dividends,
+      estimatedDividends: lot.estimatedDividends,
       totalReturn,
       totalReturnPct,
       dividendAdjustedAvgCost,
@@ -104,6 +154,17 @@ export function computeHoldings(state: PortfolioState): Holding[] {
   }
 
   return holdings.sort((a, b) => b.marketValue - a.marketValue);
+}
+
+function pushQuantityPoint(
+  timelines: Map<string, QuantityPoint[]>,
+  symbol: string,
+  date: string,
+  quantity: number
+) {
+  const list = timelines.get(symbol) ?? [];
+  list.push({ date, quantity });
+  timelines.set(symbol, list);
 }
 
 export function computeSummary(holdings: Holding[]): PortfolioSummary {
