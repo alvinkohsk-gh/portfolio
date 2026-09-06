@@ -7,7 +7,9 @@ import { formatCurrency } from "@/lib/format";
 import { Card, CardTitle } from "@/components/Card";
 import { PortfolioState } from "@/lib/types";
 import { migrate } from "@/lib/store";
-import { parseIBTransactions } from "@/lib/ibImport";
+import { ImportSummary, parseIBTransactionsFromCSV, parseIBTransactionsFromExcel } from "@/lib/ibImport";
+
+const EXCEL_EXTENSION = /\.xlsx?$/i;
 
 const CURRENCIES = ["USD", "SGD", "EUR", "GBP", "HKD", "JPY", "AUD", "CAD"];
 
@@ -56,36 +58,39 @@ export default function SettingsPage() {
     ibFileInputRef.current?.click();
   }
 
-  function handleIbFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+  function applyIbSummary(summary: ImportSummary) {
+    const added = importTransactions(ibImportPortfolioId, summary.transactions);
+    const duplicates = summary.transactions.length - added;
+    const parts = [
+      `Imported ${added} transaction${added === 1 ? "" : "s"}`,
+      `(${summary.buyCount} buys, ${summary.sellCount} sells, ${summary.dividendCount} dividend payments totaling ${formatCurrency(summary.dividendTotal, state.currency)})`,
+    ];
+    if (duplicates > 0) {
+      parts.push(`${duplicates} already existed and ${duplicates === 1 ? "was" : "were"} skipped`);
+    }
+    if (summary.skippedCount > 0) {
+      parts.push(
+        `${summary.skippedCount} non-holding row${summary.skippedCount === 1 ? "" : "s"} (interest, fees, forex, taxes) can't be represented and ${summary.skippedCount === 1 ? "was" : "were"} skipped`
+      );
+    }
+    setIbImportMessage(parts.join(" - ") + ".");
+    setIbImportError(null);
+  }
+
+  async function handleIbFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const input = e.target;
+    const file = input.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const summary = parseIBTransactions(String(reader.result));
-        const added = importTransactions(ibImportPortfolioId, summary.transactions);
-        const duplicates = summary.transactions.length - added;
-        const parts = [
-          `Imported ${added} transaction${added === 1 ? "" : "s"}`,
-          `(${summary.buyCount} buys, ${summary.sellCount} sells, ${summary.dividendCount} dividend payments totaling ${formatCurrency(summary.dividendTotal, state.currency)})`,
-        ];
-        if (duplicates > 0) {
-          parts.push(`${duplicates} already existed and ${duplicates === 1 ? "was" : "were"} skipped`);
-        }
-        if (summary.skippedCount > 0) {
-          parts.push(
-            `${summary.skippedCount} non-holding row${summary.skippedCount === 1 ? "" : "s"} (interest, fees, forex, taxes) can't be represented and ${summary.skippedCount === 1 ? "was" : "were"} skipped`
-          );
-        }
-        setIbImportMessage(parts.join(" - ") + ".");
-        setIbImportError(null);
-      } catch (err) {
-        setIbImportError(err instanceof Error ? err.message : "Couldn't read that file.");
-        setIbImportMessage(null);
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = "";
+    input.value = "";
+    try {
+      const summary = EXCEL_EXTENSION.test(file.name)
+        ? await parseIBTransactionsFromExcel(file)
+        : parseIBTransactionsFromCSV(await file.text());
+      applyIbSummary(summary);
+    } catch (err) {
+      setIbImportError(err instanceof Error ? err.message : "Couldn't read that file.");
+      setIbImportMessage(null);
+    }
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -209,9 +214,9 @@ export default function SettingsPage() {
       <Card>
         <CardTitle>Import from Interactive Brokers</CardTitle>
         <p className="text-xs text-neutral-500">
-          Import a Transaction History Flex query CSV export from IBKR. Buys and sells are
-          added as-is; dividends and their withholding tax are netted into a single amount
-          per payment. Interest, borrow fees, market data fees, and FX entries aren&apos;t
+          Import a Transaction History Flex query export from IBKR, as CSV or Excel. Buys and
+          sells are added as-is; dividends and their withholding tax are netted into a single
+          amount per payment. Interest, borrow fees, market data fees, and FX entries aren&apos;t
           tied to a holding and are skipped. Re-importing the same file won&apos;t create
           duplicates.
         </p>
@@ -231,12 +236,12 @@ export default function SettingsPage() {
             onClick={handleIbImportClick}
             className="px-3 py-2 rounded-md text-sm font-medium bg-neutral-800 hover:bg-neutral-700 text-white"
           >
-            Import IBKR CSV
+            Import IBKR file
           </button>
           <input
             ref={ibFileInputRef}
             type="file"
-            accept=".csv,text/csv"
+            accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
             className="hidden"
             onChange={handleIbFileChange}
           />

@@ -1,11 +1,19 @@
 import { Transaction } from "./types";
 
-/** Interactive Brokers "Transaction History" Flex query export is a
- * multi-section CSV: several `<Section>,Header,...` / `<Section>,Data,...`
- * blocks concatenated in one file. This only reads the "Transaction
- * History" section, using its own header row to map columns by name so it
- * isn't brittle to IB reordering or adding columns. */
+/** Interactive Brokers "Transaction History" Flex query export (CSV or
+ * Excel) is a multi-section table: several `<Section>,Header,...` /
+ * `<Section>,Data,...` blocks concatenated one after another - in a CSV
+ * that's one block of lines, in an Excel file the same rows laid out
+ * across one or more sheets. This only reads the "Transaction History"
+ * section, using its own header row to map columns by name so it isn't
+ * brittle to IB reordering or adding columns. */
 const SECTION = "Transaction History";
+
+const NO_SECTION_MESSAGE = `Couldn't find a "${SECTION}" section in that file. Export a Transaction History Flex query as CSV or Excel from IBKR.`;
+
+/** A spreadsheet cell as returned by either source: plain strings from CSV,
+ * or typed values from a parsed Excel sheet. */
+type Cell = string | number | boolean | Date | null | undefined;
 
 /** Row types that represent cash received against a specific holding
  * (ordinary dividends, and MSTY-style "payment in lieu of dividend" from
@@ -52,8 +60,16 @@ function parseCSVLine(line: string): string[] {
   return fields;
 }
 
-function toNumber(v: string | undefined): number | null {
+function cellToString(v: Cell): string {
+  if (v == null) return "";
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  return String(v).trim();
+}
+
+function toNumber(v: Cell): number | null {
   if (v == null) return null;
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v === "boolean" || v instanceof Date) return null;
   const t = v.trim();
   if (t === "" || t === "-") return null;
   const n = Number(t);
@@ -75,32 +91,35 @@ interface Row {
   netAmount: number | null;
 }
 
-function readRows(csvText: string): Row[] {
-  const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
+/** Extracts "Transaction History" rows from a grid of cells - a CSV split
+ * into lines and fields, or the concatenated rows of every sheet in a
+ * parsed Excel file. Both lay the same `<Section>,Header|Data,...` shape
+ * out as rows of cells, so one pass handles either source. */
+function rowsFromGrid(grid: Cell[][]): Row[] {
   let headerCols: string[] | null = null;
   const rows: Row[] = [];
 
-  for (const line of lines) {
-    const fields = parseCSVLine(line);
-    if (fields[0] !== SECTION) continue;
+  for (const fields of grid) {
+    if (cellToString(fields[0]) !== SECTION) continue;
 
-    if (fields[1] === "Header") {
-      headerCols = fields.slice(2).map((h) => h.trim());
+    const marker = cellToString(fields[1]);
+    if (marker === "Header") {
+      headerCols = fields.slice(2).map((h) => cellToString(h));
       continue;
     }
-    if (fields[1] !== "Data" || !headerCols) continue;
+    if (marker !== "Data" || !headerCols) continue;
 
     const values = fields.slice(2);
-    const byName: Record<string, string> = {};
+    const byName: Record<string, Cell> = {};
     headerCols.forEach((h, i) => {
-      byName[h] = values[i] ?? "";
+      byName[h] = values[i];
     });
 
     rows.push({
-      date: byName["Date"] ?? "",
-      type: byName["Transaction Type"] ?? "",
-      symbol: (byName["Symbol"] ?? "").trim(),
-      description: byName["Description"] ?? "",
+      date: cellToString(byName["Date"]),
+      type: cellToString(byName["Transaction Type"]),
+      symbol: cellToString(byName["Symbol"]),
+      description: cellToString(byName["Description"]),
       quantity: toNumber(byName["Quantity"]),
       price: toNumber(byName["Price"]),
       commission: toNumber(byName["Commission"]),
@@ -111,22 +130,22 @@ function readRows(csvText: string): Row[] {
   return rows;
 }
 
-/** Parses an Interactive Brokers "Transaction History" activity export into
- * this app's Transaction shape. Buy/Sell rows map directly; dividend income
- * is netted from the separate "Dividend"/"Payment in Lieu" and "Foreign Tax
- * Withholding" rows IB reports per date+symbol into a single DIVIDEND
- * transaction. Everything else (interest, forex, account fees, FX P&L
- * adjustments) isn't tied to a holding and can't be represented by this
- * app's transaction model, so it's counted as skipped rather than dropped
- * silently. */
-export function parseIBTransactions(csvText: string): ImportSummary {
-  const rows = readRows(csvText);
-  if (rows.length === 0) {
-    throw new Error(
-      `Couldn't find a "${SECTION}" section in that file. Export a Transaction History Flex query as CSV from IBKR.`
-    );
-  }
+function gridFromCSV(csvText: string): string[][] {
+  return csvText
+    .split(/\r?\n/)
+    .filter((l) => l.trim().length > 0)
+    .map(parseCSVLine);
+}
 
+/** Parses Interactive Brokers "Transaction History" rows (already extracted
+ * from either a CSV or an Excel file) into this app's Transaction shape.
+ * Buy/Sell rows map directly; dividend income is netted from the separate
+ * "Dividend"/"Payment in Lieu" and "Foreign Tax Withholding" rows IB
+ * reports per date+symbol into a single DIVIDEND transaction. Everything
+ * else (interest, forex, account fees, FX P&L adjustments) isn't tied to a
+ * holding and can't be represented by this app's transaction model, so
+ * it's counted as skipped rather than dropped silently. */
+function summarize(rows: Row[]): ImportSummary {
   const tradeRows = rows.filter((r) => r.type === "Buy" || r.type === "Sell");
 
   const nameBySymbol = new Map<string, string>();
@@ -214,4 +233,25 @@ export function parseIBTransactions(csvText: string): ImportSummary {
     dividendTotal,
     skippedCount: rows.length - tradeRows.length - dividendRowCount,
   };
+}
+
+/** Parses an Interactive Brokers "Transaction History" activity export
+ * saved as CSV. */
+export function parseIBTransactionsFromCSV(csvText: string): ImportSummary {
+  const rows = rowsFromGrid(gridFromCSV(csvText));
+  if (rows.length === 0) throw new Error(NO_SECTION_MESSAGE);
+  return summarize(rows);
+}
+
+/** Parses an Interactive Brokers "Transaction History" activity export
+ * saved as Excel (.xlsx/.xls). IB can lay the report's sections out across
+ * more than one sheet, so every sheet is scanned and concatenated before
+ * looking for the "Transaction History" rows. */
+export async function parseIBTransactionsFromExcel(file: Blob): Promise<ImportSummary> {
+  const readExcelFile = (await import("read-excel-file/universal")).default;
+  const sheets = await readExcelFile(file);
+  const grid = sheets.flatMap((s) => s.data) as Cell[][];
+  const rows = rowsFromGrid(grid);
+  if (rows.length === 0) throw new Error(NO_SECTION_MESSAGE);
+  return summarize(rows);
 }
