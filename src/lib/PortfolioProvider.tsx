@@ -18,6 +18,7 @@ export function usePortfolio() {
     addTransaction: store.addTransaction,
     updateTransaction: store.updateTransaction,
     deleteTransaction: store.deleteTransaction,
+    importTransactions: store.importTransactions,
     setPrice: store.setPrice,
     setLivePrices: store.setLivePrices,
     setDividendHistory: store.setDividendHistory,
