@@ -28,6 +28,15 @@ export interface ImportSummary {
   dividendCount: number;
   dividendTotal: number;
   skippedCount: number;
+  /** Symbols where a Sell in this file takes cumulative quantity negative,
+   * i.e. the file sells more shares than it ever shows being bought. This
+   * is expected when the export window doesn't cover the whole time a
+   * position was held (a common case for a "1 year" or other bounded
+   * Transaction History query) - the opening shares' purchase, and their
+   * real cost basis, simply isn't in this file. Average cost and realized
+   * gain for these symbols will be wrong until an opening BUY is added
+   * manually for the shares held coming into the export window. */
+  incompletePositionSymbols: string[];
 }
 
 function parseCSVLine(line: string): string[] {
@@ -80,6 +89,16 @@ function toTitleCase(s: string): string {
   return s.toLowerCase().replace(/(^|[\s/-])([a-z])/g, (_, sep, ch) => sep + ch.toUpperCase());
 }
 
+/** IB renames a symbol's historical rows to "<TICKER>.OLD" once a ticker
+ * change takes effect (e.g. after a symbol change or reverse split), while
+ * Buy/Sell rows keep using the current ticker throughout. Left alone, this
+ * splits one holding's dividend/fee history onto a separate phantom
+ * "XYZ.OLD" position with no trades of its own, instead of merging into
+ * the position under the current ticker. */
+function normalizeSymbol(symbol: string): string {
+  return symbol.replace(/\.OLD$/i, "");
+}
+
 interface Row {
   date: string;
   type: string;
@@ -118,7 +137,7 @@ function rowsFromGrid(grid: Cell[][]): Row[] {
     rows.push({
       date: cellToString(byName["Date"]),
       type: cellToString(byName["Transaction Type"]),
-      symbol: cellToString(byName["Symbol"]),
+      symbol: normalizeSymbol(cellToString(byName["Symbol"])),
       description: cellToString(byName["Description"]),
       quantity: toNumber(byName["Quantity"]),
       price: toNumber(byName["Price"]),
@@ -161,10 +180,15 @@ function summarize(rows: Row[]): ImportSummary {
   const timelines = new Map<string, { date: string; qty: number }[]>();
   const sortedTrades = [...tradeRows].sort((a, b) => a.date.localeCompare(b.date));
   const running = new Map<string, number>();
+  const incompletePositionSymbols = new Set<string>();
   for (const r of sortedTrades) {
     if (r.quantity == null) continue;
     const prev = running.get(r.symbol) ?? 0;
     const next = r.type === "Buy" ? prev + Math.abs(r.quantity) : prev - Math.abs(r.quantity);
+    // A Sell that takes cumulative quantity negative means this file sells
+    // shares it never shows being bought - the position was opened before
+    // the export window, so its real cost basis is missing from this data.
+    if (next < -1e-6) incompletePositionSymbols.add(r.symbol);
     running.set(r.symbol, next);
     const list = timelines.get(r.symbol) ?? [];
     list.push({ date: r.date, qty: next });
@@ -232,6 +256,7 @@ function summarize(rows: Row[]): ImportSummary {
     dividendCount: dividendGroups.size,
     dividendTotal,
     skippedCount: rows.length - tradeRows.length - dividendRowCount,
+    incompletePositionSymbols: [...incompletePositionSymbols].sort(),
   };
 }
 

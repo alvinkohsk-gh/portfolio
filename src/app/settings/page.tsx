@@ -32,6 +32,7 @@ export default function SettingsPage() {
   const [newPortfolioName, setNewPortfolioName] = useState("");
   const [ibImportPortfolioId, setIbImportPortfolioId] = useState(state.portfolios[0].id);
   const [ibImportMessage, setIbImportMessage] = useState<string | null>(null);
+  const [ibImportWarning, setIbImportWarning] = useState<string | null>(null);
   const [ibImportError, setIbImportError] = useState<string | null>(null);
 
   const symbols = allSymbols(state);
@@ -55,6 +56,7 @@ export default function SettingsPage() {
   function handleIbImportClick() {
     setIbImportError(null);
     setIbImportMessage(null);
+    setIbImportWarning(null);
     ibFileInputRef.current?.click();
   }
 
@@ -75,6 +77,11 @@ export default function SettingsPage() {
     }
     setIbImportMessage(parts.join(" - ") + ".");
     setIbImportError(null);
+    setIbImportWarning(
+      summary.incompletePositionSymbols.length > 0
+        ? `${summary.incompletePositionSymbols.join(", ")}: this file sells more shares than it shows being bought, which means the position was opened before the export window. Their average cost and realized gain will be wrong until you add an opening Buy transaction with the real historical cost basis.`
+        : null
+    );
   }
 
   async function handleIbFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -90,6 +97,7 @@ export default function SettingsPage() {
     } catch (err) {
       setIbImportError(err instanceof Error ? err.message : "Couldn't read that file.");
       setIbImportMessage(null);
+      setIbImportWarning(null);
     }
   }
 
@@ -248,6 +256,7 @@ export default function SettingsPage() {
         </div>
         {ibImportError && <p className="mt-2 text-xs text-rose-400">{ibImportError}</p>}
         {ibImportMessage && <p className="mt-2 text-xs text-emerald-400">{ibImportMessage}</p>}
+        {ibImportWarning && <p className="mt-2 text-xs text-amber-400">{ibImportWarning}</p>}
       </Card>
 
       <Card>
