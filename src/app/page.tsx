@@ -6,6 +6,7 @@ import {
   computeHoldings,
   computePerformanceSeries,
   computeSummary,
+  computeYieldMetrics,
   scopedToPortfolio,
 } from "@/lib/portfolio";
 import { ALL_PORTFOLIOS } from "@/lib/types";
@@ -25,6 +26,7 @@ export default function DashboardPage() {
   const scoped = scopedToPortfolio(state, state.activePortfolioId);
   const holdings = computeHoldings(scoped);
   const summary = computeSummary(holdings);
+  const yieldMetrics = computeYieldMetrics(scoped, holdings);
   const performance = computePerformanceSeries(scoped, holdings);
 
   const activeName =
@@ -64,7 +66,7 @@ export default function DashboardPage() {
         <PerformanceChart data={performance} currency={state.currency} />
         <AllocationChart holdings={holdings} currency={state.currency} />
       </div>
-      <HoldingsTable holdings={holdings} currency={state.currency} />
+      <HoldingsTable holdings={holdings} currency={state.currency} yieldMetrics={yieldMetrics} />
       <DividendsTable
         holdings={holdings}
         currency={state.currency}

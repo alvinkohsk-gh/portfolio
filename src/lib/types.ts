@@ -27,6 +27,8 @@ export interface PriceInfo {
   currency?: string;
   updatedAt: string; // ISO timestamp
   source: "manual" | "live";
+  fiftyTwoWeekLow?: number;
+  fiftyTwoWeekHigh?: number;
 }
 
 export interface WatchlistItem {
@@ -66,6 +68,12 @@ export interface Holding {
   priceUpdatedAt?: string;
   priceSource?: "manual" | "live";
   previousClose?: number;
+  fiftyTwoWeekLow?: number;
+  fiftyTwoWeekHigh?: number;
+  /** Where currentPrice sits between fiftyTwoWeekLow and fiftyTwoWeekHigh,
+   * as a 0-100 percentage. Undefined until a live quote has supplied both
+   * bounds; clamped in case a manual price override falls outside them. */
+  fiftyTwoWeekPct?: number;
   marketValue: number;
   gain: number;
   gainPct: number;

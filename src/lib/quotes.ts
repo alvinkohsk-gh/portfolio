@@ -4,6 +4,8 @@ export interface QuoteResult {
   dayLow?: number;
   dayHigh?: number;
   currency?: string;
+  fiftyTwoWeekLow?: number;
+  fiftyTwoWeekHigh?: number;
 }
 
 export async function fetchQuotes(
