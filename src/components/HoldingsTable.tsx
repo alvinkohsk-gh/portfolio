@@ -9,6 +9,7 @@ import {
   formatNumber,
   formatPercent,
   formatSignedCurrency,
+  gainBarColorClass,
   gainColorClass,
 } from "@/lib/format";
 import { Card } from "./Card";
@@ -18,6 +19,25 @@ import { Card } from "./Card";
  * simple derived ratio only this table needs. */
 function divPct(h: Holding): number {
   return h.costBasis > 0 ? (h.dividends / h.costBasis) * 100 : 0;
+}
+
+/** A small horizontal bar showing currentPrice's position between the
+ * 52-week low and high, colored by the holding's overall gain/loss.
+ * Missing until a live quote has supplied both bounds (manual-only prices
+ * never populate them). */
+function FiftyTwoWeekBar({ h }: { h: Holding }) {
+  if (h.fiftyTwoWeekPct == null) return <span className="text-neutral-600">—</span>;
+  return (
+    <div className="flex items-center justify-end gap-2">
+      <div className="w-14 h-1.5 rounded-full bg-neutral-800 overflow-hidden">
+        <div
+          className={`h-full rounded-full ${gainBarColorClass(h.gainPct)}`}
+          style={{ width: `${h.fiftyTwoWeekPct}%` }}
+        />
+      </div>
+      <span className="w-9 text-right">{Math.round(h.fiftyTwoWeekPct)}%</span>
+    </div>
+  );
 }
 
 type OpenColumn = {
@@ -36,6 +56,7 @@ const OPEN_COLUMNS: OpenColumn[] = [
   { key: "gainPct", label: "P&L%", value: (h) => h.gainPct },
   { key: "divPct", label: "Div%", value: divPct },
   { key: "totalReturnPct", label: "P&L+Div%", value: (h) => h.totalReturnPct },
+  { key: "fiftyTwoWeekPct", label: "52W%", value: (h) => h.fiftyTwoWeekPct ?? -1 },
 ];
 
 type ClosedHolding = Holding & { totalClosed: number };
@@ -272,6 +293,9 @@ export function HoldingsTable({
                         )}`}
                       >
                         {formatPercent(h.totalReturnPct)}
+                      </td>
+                      <td className="px-4 sm:px-5 py-3 text-right tabular-nums text-neutral-300">
+                        <FiftyTwoWeekBar h={h} />
                       </td>
                     </tr>
                   ))

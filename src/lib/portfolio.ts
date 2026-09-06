@@ -121,6 +121,18 @@ export function computeHoldings(state: PortfolioState): Holding[] {
     const totalReturnPct = costBasis > 0 ? (totalReturn / costBasis) * 100 : 0;
     const dividendAdjustedAvgCost =
       lot.quantity > 0 ? lot.avgCost - lot.dividends / lot.quantity : lot.avgCost;
+    const fiftyTwoWeekLow = priceInfo?.fiftyTwoWeekLow;
+    const fiftyTwoWeekHigh = priceInfo?.fiftyTwoWeekHigh;
+    const fiftyTwoWeekPct =
+      fiftyTwoWeekLow != null && fiftyTwoWeekHigh != null && fiftyTwoWeekHigh > fiftyTwoWeekLow
+        ? Math.max(
+            0,
+            Math.min(
+              100,
+              ((currentPrice - fiftyTwoWeekLow) / (fiftyTwoWeekHigh - fiftyTwoWeekLow)) * 100
+            )
+          )
+        : undefined;
 
     holdings.push({
       symbol,
@@ -132,6 +144,9 @@ export function computeHoldings(state: PortfolioState): Holding[] {
       priceUpdatedAt: priceInfo?.updatedAt,
       priceSource: priceInfo?.source,
       previousClose,
+      fiftyTwoWeekLow,
+      fiftyTwoWeekHigh,
+      fiftyTwoWeekPct,
       marketValue,
       gain,
       gainPct,

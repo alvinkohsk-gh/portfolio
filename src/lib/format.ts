@@ -51,3 +51,11 @@ export function gainColorClass(value: number): string {
   if (value < 0) return "text-rose-500";
   return "text-neutral-400";
 }
+
+/** Same sign-based color as gainColorClass, as a background class for
+ * filled bars/swatches rather than text. */
+export function gainBarColorClass(value: number): string {
+  if (value > 0) return "bg-emerald-500";
+  if (value < 0) return "bg-rose-500";
+  return "bg-neutral-500";
+}

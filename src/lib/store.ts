@@ -161,7 +161,16 @@ export function setPrice(symbol: string, price: number) {
 }
 
 export function setLivePrices(
-  quotes: Record<string, { price: number; previousClose?: number; currency?: string }>
+  quotes: Record<
+    string,
+    {
+      price: number;
+      previousClose?: number;
+      currency?: string;
+      fiftyTwoWeekLow?: number;
+      fiftyTwoWeekHigh?: number;
+    }
+  >
 ) {
   const nextPrices: Record<string, PriceInfo> = { ...state.prices };
   for (const [symbol, q] of Object.entries(quotes)) {
@@ -172,6 +181,8 @@ export function setLivePrices(
       currency: q.currency ?? nextPrices[symbol]?.currency ?? state.currency,
       updatedAt: new Date().toISOString(),
       source: "live",
+      fiftyTwoWeekLow: q.fiftyTwoWeekLow,
+      fiftyTwoWeekHigh: q.fiftyTwoWeekHigh,
     };
   }
   commit({ ...state, prices: nextPrices });
