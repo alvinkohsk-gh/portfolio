@@ -1,5 +1,10 @@
 import { ALL_PORTFOLIOS, DividendEvent, Holding, PortfolioState, PortfolioSummary } from "./types";
 
+/** Below this, a running share count is treated as exactly zero rather than
+ * a tiny floating-point residue from summing/subtracting fractional shares
+ * in a different order than they were bought. */
+const QUANTITY_EPSILON = 1e-6;
+
 interface RunningLot {
   quantity: number;
   avgCost: number;
@@ -75,7 +80,11 @@ export function computeHoldings(state: PortfolioState): Holding[] {
       const sellQty = Math.min(tx.quantity, lot.quantity);
       lot.realizedGain += sellQty * (tx.price - lot.avgCost) - fees;
       lot.quantity -= sellQty;
-      if (lot.quantity <= 0) {
+      // Selling down a position built from many fractional-share buys, via a
+      // different grouping of sells than it was bought in, can leave a tiny
+      // floating-point residue (e.g. 1e-14) instead of an exact zero - which
+      // would otherwise still read as an open position with "0.0000" shares.
+      if (lot.quantity <= 0 || Math.abs(lot.quantity) < QUANTITY_EPSILON) {
         lot.quantity = 0;
         lot.avgCost = 0;
       }
