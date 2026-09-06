@@ -41,6 +41,32 @@ export interface DividendEvent {
   amount: number; // cash amount per share
 }
 
+export type CorporateActionType = "SPLIT" | "MERGER";
+
+/** A stock split, consolidation (reverse split), or merger/ticker change.
+ * Applied non-destructively: original transactions are never rewritten -
+ * this is just a rule for re-expressing a transaction dated before
+ * `date` in today's share count/symbol terms at computation time. */
+export interface CorporateAction {
+  id: string;
+  type: CorporateActionType;
+  /** Effective date, yyyy-mm-dd. Transactions dated before this are
+   * re-expressed in post-action terms; transactions on or after it are
+   * assumed to already reflect the new share count/symbol. */
+  date: string;
+  /** Symbol this action applies to, as held before the action. */
+  symbol: string;
+  /** Resulting symbol. Equals `symbol` for a SPLIT; for a MERGER this is
+   * the ticker shareholders end up holding. */
+  newSymbol: string;
+  /** New shares per old share - e.g. 2 for a 2-for-1 split, 0.1 for a
+   * 1-for-10 consolidation, or a merger's stock-for-stock exchange ratio. */
+  ratio: number;
+  /** Optional cash paid per old share as part of a merger. */
+  cashPerShare?: number;
+  source: "manual" | "auto";
+}
+
 /** Sentinel activePortfolioId meaning "show every portfolio combined". */
 export const ALL_PORTFOLIOS = "all";
 
@@ -54,6 +80,7 @@ export interface PortfolioState {
   /** Fetched dividend-history cache per symbol, used to estimate lifetime
    * dividends for periods without a manually logged DIVIDEND transaction. */
   dividendHistory: Record<string, DividendEvent[]>;
+  corporateActions: CorporateAction[];
 }
 
 export interface Holding {

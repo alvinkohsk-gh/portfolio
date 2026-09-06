@@ -1,4 +1,5 @@
 import { ALL_PORTFOLIOS, DividendEvent, Holding, PortfolioState, PortfolioSummary } from "./types";
+import { applyCorporateActions, resolveFinalSymbol } from "./corporateActions";
 
 interface RunningLot {
   quantity: number;
@@ -46,9 +47,8 @@ export function computeHoldings(state: PortfolioState): Holding[] {
   const bySymbol = new Map<string, RunningLot>();
   const timelines = new Map<string, QuantityPoint[]>();
   const manualDividendDates = new Map<string, Set<string>>();
-  const sorted = [...state.transactions].sort((a, b) =>
-    a.date.localeCompare(b.date)
-  );
+  const adjusted = applyCorporateActions(state.transactions, state.corporateActions);
+  const sorted = [...adjusted].sort((a, b) => a.date.localeCompare(b.date));
 
   for (const tx of sorted) {
     const lot = bySymbol.get(tx.symbol) ?? {
@@ -203,7 +203,8 @@ export function computePerformanceSeries(
   holdings: Holding[]
 ): PerformancePoint[] {
   const priceBySymbol = new Map(holdings.map((h) => [h.symbol, h.currentPrice]));
-  const sorted = [...state.transactions]
+  const adjusted = applyCorporateActions(state.transactions, state.corporateActions);
+  const sorted = [...adjusted]
     .filter((t) => t.type !== "DIVIDEND")
     .sort((a, b) => a.date.localeCompare(b.date));
 
@@ -256,7 +257,9 @@ export function scopedToPortfolio(state: PortfolioState, portfolioId: string): P
 
 export function allSymbols(state: PortfolioState): string[] {
   const set = new Set<string>();
-  for (const t of state.transactions) set.add(t.symbol);
+  for (const t of state.transactions) {
+    set.add(resolveFinalSymbol(t.symbol, t.date, state.corporateActions));
+  }
   for (const w of state.watchlist) set.add(w.symbol);
   return [...set].sort();
 }
@@ -264,7 +267,7 @@ export function allSymbols(state: PortfolioState): string[] {
 export function symbolNames(state: PortfolioState): Record<string, string> {
   const names: Record<string, string> = {};
   for (const t of [...state.transactions].sort((a, b) => a.date.localeCompare(b.date))) {
-    if (t.name) names[t.symbol] = t.name;
+    if (t.name) names[resolveFinalSymbol(t.symbol, t.date, state.corporateActions)] = t.name;
   }
   for (const w of state.watchlist) {
     if (w.name && !names[w.symbol]) names[w.symbol] = w.name;

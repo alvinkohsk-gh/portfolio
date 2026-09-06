@@ -3,15 +3,16 @@
 import { useRef, useState } from "react";
 import { usePortfolio } from "@/lib/PortfolioProvider";
 import { allSymbols, computeHoldings } from "@/lib/portfolio";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardTitle } from "@/components/Card";
-import { Portfolio, PortfolioState, Transaction } from "@/lib/types";
+import { CorporateAction, CorporateActionType, Portfolio, PortfolioState, Transaction } from "@/lib/types";
 import { migrate } from "@/lib/store";
 import {
   ImportedTransaction,
   parseIbkrTransactionsCsv,
   partitionNewTransactions,
 } from "@/lib/ibkrImport";
+import { fetchSplitHistory } from "@/lib/splits";
 
 const CURRENCIES = ["USD", "SGD", "EUR", "GBP", "HKD", "JPY", "AUD", "CAD"];
 
@@ -167,6 +168,11 @@ export default function SettingsPage() {
         )}
       </Card>
 
+      <CorporateActionsCard
+        actions={state.corporateActions}
+        transactionSymbols={[...new Set(state.transactions.map((t) => t.symbol))]}
+      />
+
       <BrokerImportCard
         portfolios={state.portfolios}
         existingTransactions={state.transactions}
@@ -306,6 +312,199 @@ function ManualPriceRow({
         Save
       </button>
     </div>
+  );
+}
+
+const ACTION_TYPE_LABELS: Record<CorporateActionType, string> = {
+  SPLIT: "Split/consolidation",
+  MERGER: "Merger/ticker change",
+};
+
+/** Lets the user record stock splits, consolidations (reverse splits), and
+ * mergers/ticker changes, and fetch split history automatically for every
+ * symbol ever transacted. These are applied non-destructively at
+ * computation time (see lib/corporateActions.ts) - nothing here rewrites a
+ * stored transaction. */
+function CorporateActionsCard({
+  actions,
+  transactionSymbols,
+}: {
+  actions: CorporateAction[];
+  transactionSymbols: string[];
+}) {
+  const { addCorporateAction, removeCorporateAction, mergeAutoSplits } = usePortfolio();
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+
+  const [type, setType] = useState<CorporateActionType>("SPLIT");
+  const [symbol, setSymbol] = useState("");
+  const [newSymbol, setNewSymbol] = useState("");
+  const [ratio, setRatio] = useState("");
+  const [cashPerShare, setCashPerShare] = useState("");
+  const [date, setDate] = useState("");
+
+  async function handleRefresh() {
+    if (transactionSymbols.length === 0) return;
+    setRefreshing(true);
+    setRefreshError(null);
+    try {
+      const { splits, errors } = await fetchSplitHistory(transactionSymbols);
+      if (Object.keys(splits).length > 0) mergeAutoSplits(splits);
+      if (errors.length > 0 && Object.keys(splits).length === 0) {
+        setRefreshError("Couldn't reach the split data provider right now.");
+      }
+    } catch {
+      setRefreshError("Couldn't reach the split data provider right now.");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  function handleAdd(e: React.FormEvent) {
+    e.preventDefault();
+    const ratioNum = Number(ratio);
+    if (!symbol.trim() || !date || !ratioNum || ratioNum <= 0) return;
+    addCorporateAction({
+      type,
+      date,
+      symbol: symbol.trim().toUpperCase(),
+      newSymbol: (type === "MERGER" ? newSymbol : symbol).trim().toUpperCase(),
+      ratio: ratioNum,
+      cashPerShare:
+        type === "MERGER" && cashPerShare ? Number(cashPerShare) : undefined,
+      source: "manual",
+    });
+    setSymbol("");
+    setNewSymbol("");
+    setRatio("");
+    setCashPerShare("");
+    setDate("");
+  }
+
+  const sorted = [...actions].sort((a, b) => b.date.localeCompare(a.date));
+
+  return (
+    <Card>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+        <CardTitle>Corporate actions</CardTitle>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing || transactionSymbols.length === 0}
+          className="px-2.5 py-1.5 rounded-md text-xs font-medium bg-neutral-800 hover:bg-neutral-700 disabled:opacity-50 text-white"
+        >
+          {refreshing ? "Refreshing…" : "Refresh splits"}
+        </button>
+      </div>
+      <p className="text-xs text-neutral-500 mb-3">
+        Splits, consolidations, and mergers are applied on top of your
+        transactions at display time - nothing here is rewritten. Add a
+        merger (e.g. a ticker change) manually; splits can also be
+        fetched automatically.
+      </p>
+      {refreshError && <p className="mb-2 text-xs text-amber-400">{refreshError}</p>}
+
+      {sorted.length > 0 && (
+        <div className="flex flex-col gap-1.5 mb-3">
+          {sorted.map((a) => (
+            <div key={a.id} className="flex items-center gap-2 text-sm">
+              <span className="text-neutral-500 text-xs w-20 shrink-0">{formatDate(a.date)}</span>
+              <span className="text-white">
+                {a.symbol}
+                {a.type === "MERGER" && a.newSymbol !== a.symbol && (
+                  <> &rarr; {a.newSymbol}</>
+                )}
+              </span>
+              <span className="text-xs text-neutral-500">
+                {ACTION_TYPE_LABELS[a.type]}, {a.ratio}:1
+                {a.cashPerShare ? ` + cash` : ""}
+              </span>
+              <span className="text-[10px] uppercase tracking-wide text-neutral-600">
+                {a.source}
+              </span>
+              <button
+                onClick={() => removeCorporateAction(a.id)}
+                className="ml-auto text-xs font-medium text-rose-500 hover:text-rose-400"
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-2">
+        <label className="flex flex-col gap-1 text-xs text-neutral-400">
+          Type
+          <select
+            value={type}
+            onChange={(e) => setType(e.target.value as CorporateActionType)}
+            className="rounded-md bg-neutral-950 border border-neutral-700 px-2 py-1.5 text-sm text-white"
+          >
+            <option value="SPLIT">Split/consolidation</option>
+            <option value="MERGER">Merger/ticker change</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-neutral-400">
+          {type === "MERGER" ? "Old symbol" : "Symbol"}
+          <input
+            value={symbol}
+            onChange={(e) => setSymbol(e.target.value)}
+            placeholder="AAPL"
+            className="w-24 rounded-md bg-neutral-950 border border-neutral-700 px-2 py-1.5 text-sm text-white"
+          />
+        </label>
+        {type === "MERGER" && (
+          <label className="flex flex-col gap-1 text-xs text-neutral-400">
+            New symbol
+            <input
+              value={newSymbol}
+              onChange={(e) => setNewSymbol(e.target.value)}
+              placeholder="NEWCO"
+              className="w-24 rounded-md bg-neutral-950 border border-neutral-700 px-2 py-1.5 text-sm text-white"
+            />
+          </label>
+        )}
+        <label className="flex flex-col gap-1 text-xs text-neutral-400">
+          New shares per old share
+          <input
+            type="number"
+            step="any"
+            value={ratio}
+            onChange={(e) => setRatio(e.target.value)}
+            placeholder="2"
+            className="w-24 rounded-md bg-neutral-950 border border-neutral-700 px-2 py-1.5 text-sm text-white"
+          />
+        </label>
+        {type === "MERGER" && (
+          <label className="flex flex-col gap-1 text-xs text-neutral-400">
+            Cash per old share
+            <input
+              type="number"
+              step="any"
+              value={cashPerShare}
+              onChange={(e) => setCashPerShare(e.target.value)}
+              placeholder="Optional"
+              className="w-28 rounded-md bg-neutral-950 border border-neutral-700 px-2 py-1.5 text-sm text-white"
+            />
+          </label>
+        )}
+        <label className="flex flex-col gap-1 text-xs text-neutral-400">
+          Effective date
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="rounded-md bg-neutral-950 border border-neutral-700 px-2 py-1.5 text-sm text-white"
+          />
+        </label>
+        <button
+          type="submit"
+          className="px-3 py-1.5 rounded-md text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white"
+        >
+          Add
+        </button>
+      </form>
+    </Card>
   );
 }
 

@@ -1,5 +1,6 @@
 import {
   ALL_PORTFOLIOS,
+  CorporateAction,
   DividendEvent,
   Portfolio,
   PortfolioState,
@@ -24,6 +25,7 @@ const emptyState: PortfolioState = {
   portfolios: defaultPortfolios(),
   activePortfolioId: ALL_PORTFOLIOS,
   dividendHistory: {},
+  corporateActions: [],
 };
 
 let state: PortfolioState = emptyState;
@@ -49,6 +51,7 @@ export function migrate(parsed: PortfolioState): PortfolioState {
       t.portfolioId ? t : { ...t, portfolioId: fallbackId }
     ),
     dividendHistory: parsed.dividendHistory ?? {},
+    corporateActions: parsed.corporateActions ?? [],
   };
 }
 
@@ -167,6 +170,41 @@ export function setDividendHistory(history: Record<string, DividendEvent[]>) {
   });
 }
 
+export function addCorporateAction(action: Omit<CorporateAction, "id">) {
+  const id = `ca-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  commit({ ...state, corporateActions: [...state.corporateActions, { ...action, id }] });
+}
+
+export function removeCorporateAction(id: string) {
+  commit({
+    ...state,
+    corporateActions: state.corporateActions.filter((a) => a.id !== id),
+  });
+}
+
+/** Merges freshly fetched stock-split history in as auto-detected corporate
+ * actions, one per symbol/date/ratio. Keyed by a stable id so re-running
+ * "Refresh splits" upserts rather than piling up duplicates, and a split a
+ * user has deliberately removed stays removed until the next refresh. */
+export function mergeAutoSplits(splitsBySymbol: Record<string, { date: string; ratio: number }[]>) {
+  const byId = new Map(state.corporateActions.map((a) => [a.id, a]));
+  for (const [symbol, events] of Object.entries(splitsBySymbol)) {
+    for (const event of events) {
+      const id = `auto-split-${symbol}-${event.date}`;
+      byId.set(id, {
+        id,
+        type: "SPLIT",
+        date: event.date,
+        symbol,
+        newSymbol: symbol,
+        ratio: event.ratio,
+        source: "auto",
+      });
+    }
+  }
+  commit({ ...state, corporateActions: [...byId.values()] });
+}
+
 export function addWatchlistItem(item: WatchlistItem) {
   if (state.watchlist.some((w) => w.symbol === item.symbol)) return;
   commit({ ...state, watchlist: [...state.watchlist, item] });
@@ -226,5 +264,6 @@ export function clearAll() {
     portfolios: defaultPortfolios(),
     activePortfolioId: ALL_PORTFOLIOS,
     dividendHistory: {},
+    corporateActions: [],
   });
 }
