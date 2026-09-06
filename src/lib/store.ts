@@ -105,6 +105,33 @@ export function addTransaction(tx: Omit<Transaction, "id">) {
   commit({ ...state, transactions: [...state.transactions, { ...tx, id }] });
 }
 
+function transactionKey(t: Pick<Transaction, "portfolioId" | "symbol" | "type" | "date" | "quantity" | "price">) {
+  return `${t.portfolioId}|${t.symbol}|${t.type}|${t.date}|${t.quantity}|${t.price}`;
+}
+
+/** Bulk-adds transactions (e.g. from a broker CSV import) into one
+ * portfolio, skipping any that already exist there by portfolio+symbol+
+ * type+date+quantity+price, so re-importing the same statement is a no-op.
+ * Returns how many were actually added. */
+export function importTransactions(
+  portfolioId: string,
+  txs: Array<Omit<Transaction, "id" | "portfolioId">>
+): number {
+  const existingKeys = new Set(
+    state.transactions.filter((t) => t.portfolioId === portfolioId).map(transactionKey)
+  );
+  const toAdd = txs.filter((t) => !existingKeys.has(transactionKey({ ...t, portfolioId })));
+  if (toAdd.length === 0) return 0;
+
+  const withIds = toAdd.map((t, i) => ({
+    ...t,
+    portfolioId,
+    id: `tx-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 8)}`,
+  }));
+  commit({ ...state, transactions: [...state.transactions, ...withIds] });
+  return withIds.length;
+}
+
 export function updateTransaction(id: string, tx: Omit<Transaction, "id">) {
   commit({
     ...state,

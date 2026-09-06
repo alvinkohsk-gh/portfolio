@@ -7,6 +7,9 @@ import { formatCurrency } from "@/lib/format";
 import { Card, CardTitle } from "@/components/Card";
 import { PortfolioState } from "@/lib/types";
 import { migrate } from "@/lib/store";
+import { ImportSummary, parseIBTransactionsFromCSV, parseIBTransactionsFromExcel } from "@/lib/ibImport";
+
+const EXCEL_EXTENSION = /\.xlsx?$/i;
 
 const CURRENCIES = ["USD", "SGD", "EUR", "GBP", "HKD", "JPY", "AUD", "CAD"];
 
@@ -21,10 +24,15 @@ export default function SettingsPage() {
     addPortfolio,
     renamePortfolio,
     deletePortfolio,
+    importTransactions,
   } = usePortfolio();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const ibFileInputRef = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [newPortfolioName, setNewPortfolioName] = useState("");
+  const [ibImportPortfolioId, setIbImportPortfolioId] = useState(state.portfolios[0].id);
+  const [ibImportMessage, setIbImportMessage] = useState<string | null>(null);
+  const [ibImportError, setIbImportError] = useState<string | null>(null);
 
   const symbols = allSymbols(state);
   const holdings = computeHoldings(state);
@@ -42,6 +50,47 @@ export default function SettingsPage() {
   function handleImportClick() {
     setImportError(null);
     fileInputRef.current?.click();
+  }
+
+  function handleIbImportClick() {
+    setIbImportError(null);
+    setIbImportMessage(null);
+    ibFileInputRef.current?.click();
+  }
+
+  function applyIbSummary(summary: ImportSummary) {
+    const added = importTransactions(ibImportPortfolioId, summary.transactions);
+    const duplicates = summary.transactions.length - added;
+    const parts = [
+      `Imported ${added} transaction${added === 1 ? "" : "s"}`,
+      `(${summary.buyCount} buys, ${summary.sellCount} sells, ${summary.dividendCount} dividend payments totaling ${formatCurrency(summary.dividendTotal, state.currency)})`,
+    ];
+    if (duplicates > 0) {
+      parts.push(`${duplicates} already existed and ${duplicates === 1 ? "was" : "were"} skipped`);
+    }
+    if (summary.skippedCount > 0) {
+      parts.push(
+        `${summary.skippedCount} non-holding row${summary.skippedCount === 1 ? "" : "s"} (interest, fees, forex, taxes) can't be represented and ${summary.skippedCount === 1 ? "was" : "were"} skipped`
+      );
+    }
+    setIbImportMessage(parts.join(" - ") + ".");
+    setIbImportError(null);
+  }
+
+  async function handleIbFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const input = e.target;
+    const file = input.files?.[0];
+    if (!file) return;
+    input.value = "";
+    try {
+      const summary = EXCEL_EXTENSION.test(file.name)
+        ? await parseIBTransactionsFromExcel(file)
+        : parseIBTransactionsFromCSV(await file.text());
+      applyIbSummary(summary);
+    } catch (err) {
+      setIbImportError(err instanceof Error ? err.message : "Couldn't read that file.");
+      setIbImportMessage(null);
+    }
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -160,6 +209,45 @@ export default function SettingsPage() {
             })}
           </div>
         )}
+      </Card>
+
+      <Card>
+        <CardTitle>Import from Interactive Brokers</CardTitle>
+        <p className="text-xs text-neutral-500">
+          Import a Transaction History Flex query export from IBKR, as CSV or Excel. Buys and
+          sells are added as-is; dividends and their withholding tax are netted into a single
+          amount per payment. Interest, borrow fees, market data fees, and FX entries aren&apos;t
+          tied to a holding and are skipped. Re-importing the same file won&apos;t create
+          duplicates.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <select
+            value={ibImportPortfolioId}
+            onChange={(e) => setIbImportPortfolioId(e.target.value)}
+            className="rounded-md bg-neutral-950 border border-neutral-700 px-2.5 py-2 text-sm text-white"
+          >
+            {state.portfolios.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={handleIbImportClick}
+            className="px-3 py-2 rounded-md text-sm font-medium bg-neutral-800 hover:bg-neutral-700 text-white"
+          >
+            Import IBKR file
+          </button>
+          <input
+            ref={ibFileInputRef}
+            type="file"
+            accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+            className="hidden"
+            onChange={handleIbFileChange}
+          />
+        </div>
+        {ibImportError && <p className="mt-2 text-xs text-rose-400">{ibImportError}</p>}
+        {ibImportMessage && <p className="mt-2 text-xs text-emerald-400">{ibImportMessage}</p>}
       </Card>
 
       <Card>
