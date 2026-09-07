@@ -107,6 +107,18 @@ export function HoldingsTable({
     [holdings]
   );
 
+  /** Lifetime totals across every closed position, regardless of the
+   * symbol/name filter below - mirrors how the Open tab's yield line above
+   * uses the full open list rather than the filtered one. */
+  const closedTotals = useMemo(
+    () => ({
+      realizedGain: closed.reduce((sum, h) => sum + h.realizedGain, 0),
+      dividends: closed.reduce((sum, h) => sum + h.dividends, 0),
+      actual: closed.reduce((sum, h) => sum + h.totalClosed, 0),
+    }),
+    [closed]
+  );
+
   const query = filter.trim().toLowerCase();
 
   const openRows = useMemo(() => {
@@ -183,6 +195,28 @@ export function HoldingsTable({
               Projected Yield:{" "}
               <span className="text-neutral-300">
                 {formatPercent(yieldMetrics.projectedYield).replace("+", "")}
+              </span>
+            </span>
+          </div>
+        )}
+        {view === "closed" && closed.length > 0 && (
+          <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-neutral-500 pt-1.5">
+            <span>
+              Lifetime P&amp;L:{" "}
+              <span className={gainColorClass(closedTotals.realizedGain)}>
+                {formatSignedCurrency(closedTotals.realizedGain, currency)}
+              </span>
+            </span>
+            <span>
+              Dividends:{" "}
+              <span className="text-neutral-300">
+                {formatCurrency(closedTotals.dividends, currency)}
+              </span>
+            </span>
+            <span>
+              Actual (P&amp;L+Div):{" "}
+              <span className={gainColorClass(closedTotals.actual)}>
+                {formatSignedCurrency(closedTotals.actual, currency)}
               </span>
             </span>
           </div>
