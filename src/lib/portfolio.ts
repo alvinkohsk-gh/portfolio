@@ -1,18 +1,56 @@
-import { Holding, PortfolioState, PortfolioSummary, Transaction } from "./types";
+import { ALL_PORTFOLIOS, DividendEvent, Holding, PortfolioState, PortfolioSummary } from "./types";
+
+/** Below this, a running share count is treated as exactly zero rather than
+ * a tiny floating-point residue from summing/subtracting fractional shares
+ * in a different order than they were bought. */
+const QUANTITY_EPSILON = 1e-6;
 
 interface RunningLot {
   quantity: number;
   avgCost: number;
   realizedGain: number;
   dividends: number;
+  estimatedDividends: number;
   name?: string;
   firstBuyDate?: string;
+}
+
+interface QuantityPoint {
+  date: string;
+  quantity: number;
+}
+
+/** Given how many shares were held on each date (built from BUY/SELL
+ * history) and a symbol's historical per-share dividend payments, estimates
+ * the dividend income the holder would have earned - filling in for periods
+ * where the user hasn't manually logged a DIVIDEND transaction. A payment
+ * that lands on a date already covered by a manual entry is skipped so it
+ * isn't counted twice. */
+function estimateDividendIncome(
+  timeline: QuantityPoint[],
+  events: DividendEvent[],
+  manualDates: Set<string>
+): number {
+  if (timeline.length === 0 || events.length === 0) return 0;
+  let total = 0;
+  for (const event of events) {
+    if (manualDates.has(event.date)) continue;
+    let quantity = 0;
+    for (const point of timeline) {
+      if (point.date > event.date) break;
+      quantity = point.quantity;
+    }
+    if (quantity > 0) total += quantity * event.amount;
+  }
+  return total;
 }
 
 /** Computes current holdings from the full transaction history using the
  * average-cost method (the same approach most simple trackers use). */
 export function computeHoldings(state: PortfolioState): Holding[] {
   const bySymbol = new Map<string, RunningLot>();
+  const timelines = new Map<string, QuantityPoint[]>();
+  const manualDividendDates = new Map<string, Set<string>>();
   const sorted = [...state.transactions].sort((a, b) =>
     a.date.localeCompare(b.date)
   );
@@ -23,6 +61,7 @@ export function computeHoldings(state: PortfolioState): Holding[] {
       avgCost: 0,
       realizedGain: 0,
       dividends: 0,
+      estimatedDividends: 0,
       name: tx.name,
     };
     if (tx.name) lot.name = tx.name;
@@ -35,17 +74,26 @@ export function computeHoldings(state: PortfolioState): Holding[] {
       lot.avgCost = newQuantity > 0 ? (totalCostBefore + addedCost) / newQuantity : 0;
       lot.quantity = newQuantity;
       if (!lot.firstBuyDate) lot.firstBuyDate = tx.date;
+      pushQuantityPoint(timelines, tx.symbol, tx.date, lot.quantity);
     } else if (tx.type === "SELL") {
       const fees = tx.fees ?? 0;
       const sellQty = Math.min(tx.quantity, lot.quantity);
       lot.realizedGain += sellQty * (tx.price - lot.avgCost) - fees;
       lot.quantity -= sellQty;
-      if (lot.quantity <= 0) {
+      // Selling down a position built from many fractional-share buys, via a
+      // different grouping of sells than it was bought in, can leave a tiny
+      // floating-point residue (e.g. 1e-14) instead of an exact zero - which
+      // would otherwise still read as an open position with "0.0000" shares.
+      if (lot.quantity <= 0 || Math.abs(lot.quantity) < QUANTITY_EPSILON) {
         lot.quantity = 0;
         lot.avgCost = 0;
       }
+      pushQuantityPoint(timelines, tx.symbol, tx.date, lot.quantity);
     } else if (tx.type === "DIVIDEND") {
       lot.dividends += tx.price;
+      const dates = manualDividendDates.get(tx.symbol) ?? new Set<string>();
+      dates.add(tx.date);
+      manualDividendDates.set(tx.symbol, dates);
     }
 
     bySymbol.set(tx.symbol, lot);
@@ -53,6 +101,16 @@ export function computeHoldings(state: PortfolioState): Holding[] {
 
   const holdings: Holding[] = [];
   for (const [symbol, lot] of bySymbol.entries()) {
+    const history = state.dividendHistory[symbol];
+    if (history && history.length > 0) {
+      lot.estimatedDividends = estimateDividendIncome(
+        timelines.get(symbol) ?? [],
+        history,
+        manualDividendDates.get(symbol) ?? new Set()
+      );
+      lot.dividends += lot.estimatedDividends;
+    }
+
     if (lot.quantity <= 0 && lot.realizedGain === 0 && lot.dividends === 0) continue;
 
     const priceInfo = state.prices[symbol];
@@ -72,6 +130,18 @@ export function computeHoldings(state: PortfolioState): Holding[] {
     const totalReturnPct = costBasis > 0 ? (totalReturn / costBasis) * 100 : 0;
     const dividendAdjustedAvgCost =
       lot.quantity > 0 ? lot.avgCost - lot.dividends / lot.quantity : lot.avgCost;
+    const fiftyTwoWeekLow = priceInfo?.fiftyTwoWeekLow;
+    const fiftyTwoWeekHigh = priceInfo?.fiftyTwoWeekHigh;
+    const fiftyTwoWeekPct =
+      fiftyTwoWeekLow != null && fiftyTwoWeekHigh != null && fiftyTwoWeekHigh > fiftyTwoWeekLow
+        ? Math.max(
+            0,
+            Math.min(
+              100,
+              ((currentPrice - fiftyTwoWeekLow) / (fiftyTwoWeekHigh - fiftyTwoWeekLow)) * 100
+            )
+          )
+        : undefined;
 
     holdings.push({
       symbol,
@@ -83,6 +153,9 @@ export function computeHoldings(state: PortfolioState): Holding[] {
       priceUpdatedAt: priceInfo?.updatedAt,
       priceSource: priceInfo?.source,
       previousClose,
+      fiftyTwoWeekLow,
+      fiftyTwoWeekHigh,
+      fiftyTwoWeekPct,
       marketValue,
       gain,
       gainPct,
@@ -91,6 +164,7 @@ export function computeHoldings(state: PortfolioState): Holding[] {
       weight: 0, // filled in below
       realizedGain: lot.realizedGain,
       dividends: lot.dividends,
+      estimatedDividends: lot.estimatedDividends,
       totalReturn,
       totalReturnPct,
       dividendAdjustedAvgCost,
@@ -104,6 +178,17 @@ export function computeHoldings(state: PortfolioState): Holding[] {
   }
 
   return holdings.sort((a, b) => b.marketValue - a.marketValue);
+}
+
+function pushQuantityPoint(
+  timelines: Map<string, QuantityPoint[]>,
+  symbol: string,
+  date: string,
+  quantity: number
+) {
+  const list = timelines.get(symbol) ?? [];
+  list.push({ date, quantity });
+  timelines.set(symbol, list);
 }
 
 export function computeSummary(holdings: Holding[]): PortfolioSummary {
@@ -125,6 +210,97 @@ export function computeSummary(holdings: Holding[]): PortfolioSummary {
     totalRealizedGain,
     totalDividends,
     holdingsCount: openHoldings.length,
+  };
+}
+
+export interface YieldMetrics {
+  /** Trailing-12-month dividends over current market value. */
+  currentYield: number;
+  /** Trailing-12-month dividends over cost basis. */
+  costYield: number;
+  /** Each holding's latest dividend payment, annualized by how many times
+   * it paid in the trailing 12 months, over current market value - a
+   * forward-looking estimate using the latest payment rate rather than
+   * the actual trailing total (which mixes in older, possibly different,
+   * payment amounts). */
+  projectedYield: number;
+}
+
+const TRAILING_YIELD_DAYS = 365;
+
+/** Yield is computed only from manually-logged DIVIDEND transactions (not
+ * the dividendHistory-estimated portion of Holding.dividends), since
+ * turning per-share historical events into a trailing-12-month total needs
+ * the same quantity-at-date weighting computeHoldings already does for the
+ * lifetime figure, which is more machinery than a supplementary stat line
+ * warrants. It does still apply that weighting to exclude any payment from
+ * a stretch when the position was fully closed - e.g. bought, sold out
+ * entirely, then reopened later - so a dividend paid while you didn't hold
+ * the stock is never counted, even though the symbol is open again now. */
+export function computeYieldMetrics(state: PortfolioState, holdings: Holding[]): YieldMetrics {
+  const openHoldings = holdings.filter((h) => h.quantity > 0);
+  const totalValue = openHoldings.reduce((s, h) => s + h.marketValue, 0);
+  const totalCost = openHoldings.reduce((s, h) => s + h.costBasis, 0);
+  if (totalValue === 0) return { currentYield: 0, costYield: 0, projectedYield: 0 };
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - TRAILING_YIELD_DAYS);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+  const openSymbols = new Set(openHoldings.map((h) => h.symbol));
+
+  // Per-symbol running-quantity timeline from this symbol's own Buy/Sell
+  // history, so a dividend can be checked against how many shares were
+  // actually held on its payment date.
+  const timelines = new Map<string, { date: string; qty: number }[]>();
+  const sortedTrades = [...state.transactions]
+    .filter((t) => (t.type === "BUY" || t.type === "SELL") && openSymbols.has(t.symbol))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const running = new Map<string, number>();
+  for (const t of sortedTrades) {
+    const prev = running.get(t.symbol) ?? 0;
+    const next = t.type === "BUY" ? prev + t.quantity : prev - t.quantity;
+    running.set(t.symbol, next);
+    const list = timelines.get(t.symbol) ?? [];
+    list.push({ date: t.date, qty: next });
+    timelines.set(t.symbol, list);
+  }
+
+  function heldOn(symbol: string, date: string): boolean {
+    const points = timelines.get(symbol);
+    if (!points) return false;
+    let qty = 0;
+    for (const p of points) {
+      if (p.date > date) break;
+      qty = p.qty;
+    }
+    return qty > 0;
+  }
+
+  const paymentsBySymbol = new Map<string, { date: string; amount: number }[]>();
+  for (const t of state.transactions) {
+    if (t.type !== "DIVIDEND" || !openSymbols.has(t.symbol)) continue;
+    if (!heldOn(t.symbol, t.date)) continue;
+    const list = paymentsBySymbol.get(t.symbol) ?? [];
+    list.push({ date: t.date, amount: t.price });
+    paymentsBySymbol.set(t.symbol, list);
+  }
+
+  let trailingTotal = 0;
+  let projectedTotal = 0;
+  for (const payments of paymentsBySymbol.values()) {
+    const trailing = payments.filter((p) => p.date >= cutoffStr);
+    trailingTotal += trailing.reduce((s, p) => s + p.amount, 0);
+    if (trailing.length > 0) {
+      const latest = [...payments].sort((a, b) => b.date.localeCompare(a.date))[0];
+      projectedTotal += latest.amount * trailing.length;
+    }
+  }
+
+  return {
+    currentYield: (trailingTotal / totalValue) * 100,
+    costYield: totalCost > 0 ? (trailingTotal / totalCost) * 100 : 0,
+    projectedYield: (projectedTotal / totalValue) * 100,
   };
 }
 
@@ -182,8 +358,15 @@ export function computePerformanceSeries(
   return points;
 }
 
-export function nextTransactionId(): string {
-  return `tx-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+/** Returns a copy of state scoped to one portfolio (or the state as-is for
+ * ALL_PORTFOLIOS), so the existing compute* functions don't need to know
+ * about portfolios at all - they just see a smaller transaction list. */
+export function scopedToPortfolio(state: PortfolioState, portfolioId: string): PortfolioState {
+  if (portfolioId === ALL_PORTFOLIOS) return state;
+  return {
+    ...state,
+    transactions: state.transactions.filter((t) => t.portfolioId === portfolioId),
+  };
 }
 
 export function allSymbols(state: PortfolioState): string[] {
@@ -202,15 +385,4 @@ export function symbolNames(state: PortfolioState): Record<string, string> {
     if (w.name && !names[w.symbol]) names[w.symbol] = w.name;
   }
   return names;
-}
-
-export function emptyTransaction(): Omit<Transaction, "id"> {
-  return {
-    symbol: "",
-    type: "BUY",
-    date: new Date().toISOString().slice(0, 10),
-    quantity: 0,
-    price: 0,
-    fees: 0,
-  };
 }

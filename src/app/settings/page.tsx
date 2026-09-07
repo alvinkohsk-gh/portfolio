@@ -6,14 +6,34 @@ import { allSymbols, computeHoldings } from "@/lib/portfolio";
 import { formatCurrency } from "@/lib/format";
 import { Card, CardTitle } from "@/components/Card";
 import { PortfolioState } from "@/lib/types";
+import { migrate } from "@/lib/store";
+import { ImportSummary, parseIBTransactionsFromCSV, parseIBTransactionsFromExcel } from "@/lib/ibImport";
+
+const EXCEL_EXTENSION = /\.xlsx?$/i;
 
 const CURRENCIES = ["USD", "SGD", "EUR", "GBP", "HKD", "JPY", "AUD", "CAD"];
 
 export default function SettingsPage() {
-  const { state, setCurrency, setPrice, replaceState, resetToSample, clearAll } =
-    usePortfolio();
+  const {
+    state,
+    setCurrency,
+    setPrice,
+    replaceState,
+    resetToSample,
+    clearAll,
+    addPortfolio,
+    renamePortfolio,
+    deletePortfolio,
+    importTransactions,
+  } = usePortfolio();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const ibFileInputRef = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [newPortfolioName, setNewPortfolioName] = useState("");
+  const [ibImportPortfolioId, setIbImportPortfolioId] = useState(state.portfolios[0].id);
+  const [ibImportMessage, setIbImportMessage] = useState<string | null>(null);
+  const [ibImportWarning, setIbImportWarning] = useState<string | null>(null);
+  const [ibImportError, setIbImportError] = useState<string | null>(null);
 
   const symbols = allSymbols(state);
   const holdings = computeHoldings(state);
@@ -33,6 +53,54 @@ export default function SettingsPage() {
     fileInputRef.current?.click();
   }
 
+  function handleIbImportClick() {
+    setIbImportError(null);
+    setIbImportMessage(null);
+    setIbImportWarning(null);
+    ibFileInputRef.current?.click();
+  }
+
+  function applyIbSummary(summary: ImportSummary) {
+    const added = importTransactions(ibImportPortfolioId, summary.transactions);
+    const duplicates = summary.transactions.length - added;
+    const parts = [
+      `Imported ${added} transaction${added === 1 ? "" : "s"}`,
+      `(${summary.buyCount} buys, ${summary.sellCount} sells, ${summary.dividendCount} dividend payments totaling ${formatCurrency(summary.dividendTotal, state.currency)})`,
+    ];
+    if (duplicates > 0) {
+      parts.push(`${duplicates} already existed and ${duplicates === 1 ? "was" : "were"} skipped`);
+    }
+    if (summary.skippedCount > 0) {
+      parts.push(
+        `${summary.skippedCount} non-holding row${summary.skippedCount === 1 ? "" : "s"} (interest, fees, forex, taxes) can't be represented and ${summary.skippedCount === 1 ? "was" : "were"} skipped`
+      );
+    }
+    setIbImportMessage(parts.join(" - ") + ".");
+    setIbImportError(null);
+    setIbImportWarning(
+      summary.incompletePositionSymbols.length > 0
+        ? `${summary.incompletePositionSymbols.join(", ")}: this file sells more shares than it shows being bought, which means the position was opened before the export window. Their average cost and realized gain will be wrong until you add an opening Buy transaction with the real historical cost basis.`
+        : null
+    );
+  }
+
+  async function handleIbFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const input = e.target;
+    const file = input.files?.[0];
+    if (!file) return;
+    input.value = "";
+    try {
+      const summary = EXCEL_EXTENSION.test(file.name)
+        ? await parseIBTransactionsFromExcel(file)
+        : parseIBTransactionsFromCSV(await file.text());
+      applyIbSummary(summary);
+    } catch (err) {
+      setIbImportError(err instanceof Error ? err.message : "Couldn't read that file.");
+      setIbImportMessage(null);
+      setIbImportWarning(null);
+    }
+  }
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -43,7 +111,7 @@ export default function SettingsPage() {
         if (!Array.isArray(parsed.transactions) || typeof parsed.prices !== "object") {
           throw new Error("Invalid file shape");
         }
-        replaceState(parsed);
+        replaceState(migrate(parsed));
         setImportError(null);
       } catch {
         setImportError("Couldn't read that file. Make sure it's a JSON export from this app.");
@@ -76,6 +144,60 @@ export default function SettingsPage() {
       </Card>
 
       <Card>
+        <CardTitle>Portfolios</CardTitle>
+        <div className="flex flex-col gap-2">
+          {state.portfolios.map((p) => {
+            const count = state.transactions.filter((t) => t.portfolioId === p.id).length;
+            return (
+              <PortfolioRow
+                key={p.id}
+                name={p.name}
+                transactionCount={count}
+                canDelete={state.portfolios.length > 1}
+                onRename={(name) => renamePortfolio(p.id, name)}
+                onDelete={() => {
+                  if (
+                    confirm(
+                      count > 0
+                        ? `Delete "${p.name}" and its ${count} transaction${
+                            count === 1 ? "" : "s"
+                          }? This can't be undone.`
+                        : `Delete "${p.name}"?`
+                    )
+                  ) {
+                    deletePortfolio(p.id);
+                  }
+                }}
+              />
+            );
+          })}
+        </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const name = newPortfolioName.trim();
+            if (!name) return;
+            addPortfolio(name);
+            setNewPortfolioName("");
+          }}
+          className="mt-3 flex items-center gap-2"
+        >
+          <input
+            value={newPortfolioName}
+            onChange={(e) => setNewPortfolioName(e.target.value)}
+            placeholder="New portfolio name"
+            className="w-48 rounded-md bg-neutral-950 border border-neutral-700 px-2.5 py-1.5 text-sm text-white"
+          />
+          <button
+            type="submit"
+            className="text-xs font-medium text-emerald-400 hover:text-emerald-300"
+          >
+            Add portfolio
+          </button>
+        </form>
+      </Card>
+
+      <Card>
         <CardTitle>Manual prices</CardTitle>
         {symbols.length === 0 ? (
           <p className="text-sm text-neutral-500">No symbols yet.</p>
@@ -95,6 +217,46 @@ export default function SettingsPage() {
             })}
           </div>
         )}
+      </Card>
+
+      <Card>
+        <CardTitle>Import from Interactive Brokers</CardTitle>
+        <p className="text-xs text-neutral-500">
+          Import a Transaction History Flex query export from IBKR, as CSV or Excel. Buys and
+          sells are added as-is; dividends and their withholding tax are netted into a single
+          amount per payment. Interest, borrow fees, market data fees, and FX entries aren&apos;t
+          tied to a holding and are skipped. Re-importing the same file won&apos;t create
+          duplicates.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <select
+            value={ibImportPortfolioId}
+            onChange={(e) => setIbImportPortfolioId(e.target.value)}
+            className="rounded-md bg-neutral-950 border border-neutral-700 px-2.5 py-2 text-sm text-white"
+          >
+            {state.portfolios.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={handleIbImportClick}
+            className="px-3 py-2 rounded-md text-sm font-medium bg-neutral-800 hover:bg-neutral-700 text-white"
+          >
+            Import IBKR file
+          </button>
+          <input
+            ref={ibFileInputRef}
+            type="file"
+            accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+            className="hidden"
+            onChange={handleIbFileChange}
+          />
+        </div>
+        {ibImportError && <p className="mt-2 text-xs text-rose-400">{ibImportError}</p>}
+        {ibImportMessage && <p className="mt-2 text-xs text-emerald-400">{ibImportMessage}</p>}
+        {ibImportWarning && <p className="mt-2 text-xs text-amber-400">{ibImportWarning}</p>}
       </Card>
 
       <Card>
@@ -140,7 +302,7 @@ export default function SettingsPage() {
           </button>
           <button
             onClick={() => {
-              if (confirm("This will permanently delete all transactions, prices, and watchlist items. Continue?")) {
+              if (confirm("This will permanently delete all transactions, prices, watchlist items, and portfolios. Continue?")) {
                 clearAll();
               }
             }}
@@ -150,6 +312,52 @@ export default function SettingsPage() {
           </button>
         </div>
       </Card>
+    </div>
+  );
+}
+
+function PortfolioRow({
+  name,
+  transactionCount,
+  canDelete,
+  onRename,
+  onDelete,
+}: {
+  name: string;
+  transactionCount: number;
+  canDelete: boolean;
+  onRename: (name: string) => void;
+  onDelete: () => void;
+}) {
+  const [value, setValue] = useState(name);
+  const dirty = value.trim() !== name && value.trim().length > 0;
+
+  return (
+    <div className="flex items-center gap-3">
+      <input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        className="w-48 rounded-md bg-neutral-950 border border-neutral-700 px-2.5 py-1.5 text-sm text-white"
+      />
+      <span className="text-xs text-neutral-500 w-20">
+        {transactionCount} tx{transactionCount === 1 ? "" : "s"}
+      </span>
+      {dirty && (
+        <button
+          onClick={() => onRename(value.trim())}
+          className="text-xs font-medium text-emerald-400 hover:text-emerald-300"
+        >
+          Save
+        </button>
+      )}
+      <button
+        onClick={onDelete}
+        disabled={!canDelete}
+        title={canDelete ? undefined : "At least one portfolio is required"}
+        className="ml-auto text-xs font-medium text-rose-500 hover:text-rose-400 disabled:opacity-30 disabled:cursor-not-allowed"
+      >
+        Delete
+      </button>
     </div>
   );
 }

@@ -1,7 +1,11 @@
 export interface QuoteResult {
   price: number;
   previousClose?: number;
+  dayLow?: number;
+  dayHigh?: number;
   currency?: string;
+  fiftyTwoWeekLow?: number;
+  fiftyTwoWeekHigh?: number;
 }
 
 export async function fetchQuotes(
