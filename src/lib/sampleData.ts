@@ -246,7 +246,6 @@ export const sampleState: PortfolioState = {
     NVDA: {
       symbol: "NVDA",
       price: 220.78,
-      previousClose: 118.6,
       currency: "USD",
       updatedAt: MOOMOO_PRICE_TIMESTAMP,
       source: "manual",
