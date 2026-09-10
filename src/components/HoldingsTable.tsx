@@ -53,6 +53,7 @@ const OPEN_COLUMNS: OpenColumn[] = [
   { key: "currentPrice", label: "Close", value: (h) => h.currentPrice },
   { key: "marketValue", label: "Value", value: (h) => h.marketValue },
   { key: "dayChangePct", label: "Day%", value: (h) => h.dayChangePct },
+  { key: "gain", label: "P&L", value: (h) => h.gain },
   { key: "gainPct", label: "P&L%", value: (h) => h.gainPct },
   { key: "divPct", label: "Div%", value: divPct },
   { key: "totalReturnPct", label: "P&L+Div%", value: (h) => h.totalReturnPct },
@@ -276,6 +277,13 @@ export function HoldingsTable({
                         ) : (
                           <span className="text-neutral-600">—</span>
                         )}
+                      </td>
+                      <td
+                        className={`px-4 sm:px-5 py-3 text-right tabular-nums ${gainColorClass(
+                          h.gain
+                        )}`}
+                      >
+                        {formatSignedCurrency(h.gain, currency)}
                       </td>
                       <td
                         className={`px-4 sm:px-5 py-3 text-right tabular-nums ${gainColorClass(
