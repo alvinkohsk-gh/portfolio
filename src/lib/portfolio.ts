@@ -68,25 +68,60 @@ export function computeHoldings(state: PortfolioState): Holding[] {
 
     if (tx.type === "BUY") {
       const fees = tx.fees ?? 0;
-      const totalCostBefore = lot.quantity * lot.avgCost;
-      const newQuantity = lot.quantity + tx.quantity;
-      const addedCost = tx.quantity * tx.price + fees;
-      lot.avgCost = newQuantity > 0 ? (totalCostBefore + addedCost) / newQuantity : 0;
-      lot.quantity = newQuantity;
-      if (!lot.firstBuyDate) lot.firstBuyDate = tx.date;
+      if (lot.quantity < 0) {
+        // Covering an existing short: shares up to the short size close it
+        // out at a gain/loss versus the short's average sale price; any
+        // excess opens a new long position.
+        const coverQty = Math.min(tx.quantity, -lot.quantity);
+        lot.realizedGain += coverQty * (lot.avgCost - tx.price) - fees;
+        lot.quantity += coverQty;
+        const remaining = tx.quantity - coverQty;
+        if (remaining > 0) {
+          lot.avgCost = tx.price;
+          lot.quantity = remaining;
+          if (!lot.firstBuyDate) lot.firstBuyDate = tx.date;
+        } else if (Math.abs(lot.quantity) < QUANTITY_EPSILON) {
+          lot.quantity = 0;
+          lot.avgCost = 0;
+        }
+      } else {
+        const totalCostBefore = lot.quantity * lot.avgCost;
+        const newQuantity = lot.quantity + tx.quantity;
+        const addedCost = tx.quantity * tx.price + fees;
+        lot.avgCost = newQuantity > 0 ? (totalCostBefore + addedCost) / newQuantity : 0;
+        lot.quantity = newQuantity;
+        if (!lot.firstBuyDate) lot.firstBuyDate = tx.date;
+      }
       pushQuantityPoint(timelines, tx.symbol, tx.date, lot.quantity);
     } else if (tx.type === "SELL") {
       const fees = tx.fees ?? 0;
-      const sellQty = Math.min(tx.quantity, lot.quantity);
-      lot.realizedGain += sellQty * (tx.price - lot.avgCost) - fees;
-      lot.quantity -= sellQty;
-      // Selling down a position built from many fractional-share buys, via a
-      // different grouping of sells than it was bought in, can leave a tiny
-      // floating-point residue (e.g. 1e-14) instead of an exact zero - which
-      // would otherwise still read as an open position with "0.0000" shares.
-      if (lot.quantity <= 0 || Math.abs(lot.quantity) < QUANTITY_EPSILON) {
-        lot.quantity = 0;
-        lot.avgCost = 0;
+      if (lot.quantity > 0) {
+        const sellQty = Math.min(tx.quantity, lot.quantity);
+        lot.realizedGain += sellQty * (tx.price - lot.avgCost) - fees;
+        lot.quantity -= sellQty;
+        const remaining = tx.quantity - sellQty;
+        if (remaining > 0) {
+          // Selling past the existing long opens a short with the rest.
+          lot.avgCost = tx.price;
+          lot.quantity = -remaining;
+        } else if (Math.abs(lot.quantity) < QUANTITY_EPSILON) {
+          // Selling down a position built from many fractional-share buys,
+          // via a different grouping of sells than it was bought in, can
+          // leave a tiny floating-point residue (e.g. 1e-14) instead of an
+          // exact zero - which would otherwise still read as an open
+          // position with "0.0000" shares.
+          lot.quantity = 0;
+          lot.avgCost = 0;
+        }
+      } else {
+        // Extending (or opening) a short position: track the
+        // volume-weighted average sale price of the short.
+        const shortQtyBefore = -lot.quantity;
+        const proceedsBefore = shortQtyBefore * lot.avgCost;
+        const newShortQty = shortQtyBefore + tx.quantity;
+        const addedProceeds = tx.quantity * tx.price - fees;
+        lot.avgCost = newShortQty > 0 ? (proceedsBefore + addedProceeds) / newShortQty : 0;
+        lot.quantity = -newShortQty;
       }
       pushQuantityPoint(timelines, tx.symbol, tx.date, lot.quantity);
     } else if (tx.type === "DIVIDEND") {
@@ -111,7 +146,7 @@ export function computeHoldings(state: PortfolioState): Holding[] {
       lot.dividends += lot.estimatedDividends;
     }
 
-    if (lot.quantity <= 0 && lot.realizedGain === 0 && lot.dividends === 0) continue;
+    if (lot.quantity === 0 && lot.realizedGain === 0 && lot.dividends === 0) continue;
 
     const priceInfo = state.prices[symbol];
     const currentPrice = priceInfo?.price ?? lot.avgCost;
@@ -119,7 +154,7 @@ export function computeHoldings(state: PortfolioState): Holding[] {
     const costBasis = lot.quantity * lot.avgCost;
     const marketValue = lot.quantity * currentPrice;
     const gain = marketValue - costBasis;
-    const gainPct = costBasis > 0 ? (gain / costBasis) * 100 : 0;
+    const gainPct = costBasis !== 0 ? (gain / Math.abs(costBasis)) * 100 : 0;
     const dayChange =
       previousClose != null ? lot.quantity * (currentPrice - previousClose) : 0;
     const dayChangePct =
@@ -127,7 +162,7 @@ export function computeHoldings(state: PortfolioState): Holding[] {
         ? ((currentPrice - previousClose) / previousClose) * 100
         : 0;
     const totalReturn = gain + lot.dividends;
-    const totalReturnPct = costBasis > 0 ? (totalReturn / costBasis) * 100 : 0;
+    const totalReturnPct = costBasis !== 0 ? (totalReturn / Math.abs(costBasis)) * 100 : 0;
     const dividendAdjustedAvgCost =
       lot.quantity > 0 ? lot.avgCost - lot.dividends / lot.quantity : lot.avgCost;
     const fiftyTwoWeekLow = priceInfo?.fiftyTwoWeekLow;
@@ -192,7 +227,7 @@ function pushQuantityPoint(
 }
 
 export function computeSummary(holdings: Holding[]): PortfolioSummary {
-  const openHoldings = holdings.filter((h) => h.quantity > 0);
+  const openHoldings = holdings.filter((h) => h.quantity !== 0);
   const totalValue = openHoldings.reduce((s, h) => s + h.marketValue, 0);
   const totalCost = openHoldings.reduce((s, h) => s + h.costBasis, 0);
   const dayChange = openHoldings.reduce((s, h) => s + h.dayChange, 0);
@@ -344,7 +379,7 @@ export function computePerformanceSeries(
       qtyBySymbol.set(tx.symbol, qty + tx.quantity);
     } else if (tx.type === "SELL") {
       invested -= tx.quantity * tx.price - (tx.fees ?? 0);
-      qtyBySymbol.set(tx.symbol, Math.max(0, qty - tx.quantity));
+      qtyBySymbol.set(tx.symbol, qty - tx.quantity);
     }
     pushPoint(tx.date);
   }
