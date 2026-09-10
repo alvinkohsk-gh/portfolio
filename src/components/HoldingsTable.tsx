@@ -98,11 +98,11 @@ export function HoldingsTable({
     dir: -1,
   });
 
-  const open = useMemo(() => holdings.filter((h) => h.quantity > 0), [holdings]);
+  const open = useMemo(() => holdings.filter((h) => h.quantity !== 0), [holdings]);
   const closed = useMemo(
     (): ClosedHolding[] =>
       holdings
-        .filter((h) => h.quantity <= 0)
+        .filter((h) => h.quantity === 0)
         .map((h) => ({ ...h, totalClosed: h.realizedGain + h.dividends })),
     [holdings]
   );

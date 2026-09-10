@@ -83,7 +83,7 @@ export function DividendsTable({
                     </div>
                   </td>
                   <td className="px-4 sm:px-5 py-3 text-xs text-neutral-500">
-                    {h.quantity > 0 ? "Open" : "Closed"}
+                    {h.quantity !== 0 ? "Open" : "Closed"}
                   </td>
                   <td className="px-4 sm:px-5 py-3 text-right tabular-nums text-white">
                     <div>{formatCurrency(h.dividends, currency)}</div>
