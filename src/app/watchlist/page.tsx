@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePortfolio } from "@/lib/PortfolioProvider";
 import { fetchQuotes } from "@/lib/quotes";
 import { formatCurrency, formatDateTime, formatPercent, gainColorClass } from "@/lib/format";
@@ -37,6 +37,18 @@ export default function WatchlistPage() {
       setLoading(false);
     }
   }
+
+  // Fetch quotes (including last close) as soon as the watchlist has symbols
+  // to show, so the table isn't empty until the user clicks "Refresh
+  // prices" - re-runs whenever the set of watched symbols changes (e.g. a
+  // new symbol added), not on every render.
+  const watchlistKey = state.watchlist.map((w) => w.symbol).join(",");
+  useEffect(() => {
+    if (!watchlistKey) return;
+    const id = setTimeout(() => handleRefresh(), 0);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchlistKey]);
 
   return (
     <div className="flex flex-col gap-4">
