@@ -23,6 +23,7 @@ export default function SettingsPage() {
     clearAll,
     addPortfolio,
     renamePortfolio,
+    setPortfolioCurrency,
     deletePortfolio,
     importTransactions,
   } = usePortfolio();
@@ -30,6 +31,7 @@ export default function SettingsPage() {
   const ibFileInputRef = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [newPortfolioName, setNewPortfolioName] = useState("");
+  const [newPortfolioCurrency, setNewPortfolioCurrency] = useState(state.currency);
   const [ibImportPortfolioId, setIbImportPortfolioId] = useState(state.portfolios[0].id);
   const [ibImportMessage, setIbImportMessage] = useState<string | null>(null);
   const [ibImportWarning, setIbImportWarning] = useState<string | null>(null);
@@ -126,7 +128,7 @@ export default function SettingsPage() {
       <h1 className="text-xl font-semibold text-white">Settings</h1>
 
       <Card>
-        <CardTitle>Display currency</CardTitle>
+        <CardTitle>Default currency</CardTitle>
         <select
           value={state.currency}
           onChange={(e) => setCurrency(e.target.value)}
@@ -139,7 +141,9 @@ export default function SettingsPage() {
           ))}
         </select>
         <p className="mt-2 text-xs text-neutral-500">
-          This relabels amounts; it does not convert values between currencies.
+          Used for &quot;All Portfolios&quot;, manual prices, and any portfolio without its
+          own currency set below. This relabels amounts; it does not convert values between
+          currencies.
         </p>
       </Card>
 
@@ -152,9 +156,11 @@ export default function SettingsPage() {
               <PortfolioRow
                 key={p.id}
                 name={p.name}
+                currency={p.currency ?? state.currency}
                 transactionCount={count}
                 canDelete={state.portfolios.length > 1}
                 onRename={(name) => renamePortfolio(p.id, name)}
+                onSetCurrency={(currency) => setPortfolioCurrency(p.id, currency)}
                 onDelete={() => {
                   if (
                     confirm(
@@ -177,7 +183,7 @@ export default function SettingsPage() {
             e.preventDefault();
             const name = newPortfolioName.trim();
             if (!name) return;
-            addPortfolio(name);
+            addPortfolio(name, newPortfolioCurrency);
             setNewPortfolioName("");
           }}
           className="mt-3 flex items-center gap-2"
@@ -188,6 +194,17 @@ export default function SettingsPage() {
             placeholder="New portfolio name"
             className="w-48 rounded-md bg-neutral-950 border border-neutral-700 px-2.5 py-1.5 text-sm text-white"
           />
+          <select
+            value={newPortfolioCurrency}
+            onChange={(e) => setNewPortfolioCurrency(e.target.value)}
+            className="rounded-md bg-neutral-950 border border-neutral-700 px-2 py-1.5 text-sm text-white"
+          >
+            {CURRENCIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
           <button
             type="submit"
             className="text-xs font-medium text-emerald-400 hover:text-emerald-300"
@@ -318,15 +335,19 @@ export default function SettingsPage() {
 
 function PortfolioRow({
   name,
+  currency,
   transactionCount,
   canDelete,
   onRename,
+  onSetCurrency,
   onDelete,
 }: {
   name: string;
+  currency: string;
   transactionCount: number;
   canDelete: boolean;
   onRename: (name: string) => void;
+  onSetCurrency: (currency: string) => void;
   onDelete: () => void;
 }) {
   const [value, setValue] = useState(name);
@@ -339,6 +360,17 @@ function PortfolioRow({
         onChange={(e) => setValue(e.target.value)}
         className="w-48 rounded-md bg-neutral-950 border border-neutral-700 px-2.5 py-1.5 text-sm text-white"
       />
+      <select
+        value={currency}
+        onChange={(e) => onSetCurrency(e.target.value)}
+        className="rounded-md bg-neutral-950 border border-neutral-700 px-2 py-1.5 text-xs text-white"
+      >
+        {CURRENCIES.map((c) => (
+          <option key={c} value={c}>
+            {c}
+          </option>
+        ))}
+      </select>
       <span className="text-xs text-neutral-500 w-20">
         {transactionCount} tx{transactionCount === 1 ? "" : "s"}
       </span>

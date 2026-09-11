@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePortfolio } from "@/lib/PortfolioProvider";
 import {
+  activeCurrency,
   computeHoldings,
   computePerformanceSeries,
   computeSummary,
@@ -31,6 +32,7 @@ export default function DashboardPage() {
   const summary = computeSummary(holdings);
   const yieldMetrics = computeYieldMetrics(scoped, holdings);
   const performance = computePerformanceSeries(scoped, holdings);
+  const currency = activeCurrency(state);
 
   const activeName =
     state.activePortfolioId === ALL_PORTFOLIOS
@@ -86,23 +88,23 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col gap-5">
       <h1 className="text-xl font-semibold text-white">{activeName}</h1>
-      <SummaryCards summary={summary} currency={state.currency} />
+      <SummaryCards summary={summary} currency={currency} />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <PerformanceChart data={performance} currency={state.currency} />
-        <AllocationChart holdings={holdings} currency={state.currency} sectors={state.sectors} />
+        <PerformanceChart data={performance} currency={currency} />
+        <AllocationChart holdings={holdings} currency={currency} sectors={state.sectors} />
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <SectorConcentration holdings={holdings} sectors={state.sectors} />
         <DividendCalendar
           holdings={holdings}
           dividendHistory={state.dividendHistory}
-          currency={state.currency}
+          currency={currency}
         />
       </div>
-      <HoldingsTable holdings={holdings} currency={state.currency} yieldMetrics={yieldMetrics} />
+      <HoldingsTable holdings={holdings} currency={currency} yieldMetrics={yieldMetrics} />
       <DividendsTable
         holdings={holdings}
-        currency={state.currency}
+        currency={currency}
         onRefresh={handleRefreshDividends}
         refreshing={refreshingDividends}
         error={dividendError}
