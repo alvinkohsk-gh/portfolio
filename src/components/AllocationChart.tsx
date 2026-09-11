@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { Holding } from "@/lib/types";
+import { groupHoldingsBySector } from "@/lib/portfolio";
 import { formatCurrency, formatPercent } from "@/lib/format";
 import { Card, CardTitle } from "./Card";
 
@@ -21,16 +23,25 @@ const COLORS = [
 export function AllocationChart({
   holdings,
   currency,
+  sectors = {},
 }: {
   holdings: Holding[];
   currency: string;
+  /** Sector per symbol (e.g. "Technology"), fetched from an external
+   * provider. Symbols missing here group under "Other" in sector view. */
+  sectors?: Record<string, string>;
 }) {
+  const [groupBy, setGroupBy] = useState<"symbol" | "sector">("symbol");
   const open = holdings.filter((h) => h.quantity > 0);
-  const data = open.map((h) => ({
-    name: h.symbol,
-    value: h.marketValue,
-    weight: h.weight,
-  }));
+
+  const data =
+    groupBy === "symbol"
+      ? open.map((h) => ({
+          name: h.symbol,
+          value: h.marketValue,
+          weight: h.weight,
+        }))
+      : groupHoldingsBySector(holdings, sectors);
 
   if (data.length === 0) {
     return (
@@ -45,7 +56,31 @@ export function AllocationChart({
 
   return (
     <Card>
-      <CardTitle>Allocation</CardTitle>
+      <div className="flex items-center justify-between gap-3">
+        <CardTitle>Allocation</CardTitle>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setGroupBy("symbol")}
+            className={`px-2 py-1 rounded-md text-xs font-medium ${
+              groupBy === "symbol"
+                ? "bg-neutral-800 text-white"
+                : "text-neutral-500 hover:text-neutral-300"
+            }`}
+          >
+            By Symbol
+          </button>
+          <button
+            onClick={() => setGroupBy("sector")}
+            className={`px-2 py-1 rounded-md text-xs font-medium ${
+              groupBy === "sector"
+                ? "bg-neutral-800 text-white"
+                : "text-neutral-500 hover:text-neutral-300"
+            }`}
+          >
+            By Sector
+          </button>
+        </div>
+      </div>
       <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>

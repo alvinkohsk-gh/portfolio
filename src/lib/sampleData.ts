@@ -319,4 +319,5 @@ export const sampleState: PortfolioState = {
     { symbol: "AMZN", name: "Amazon.com Inc." },
   ],
   dividendHistory: {},
+  sectors: {},
 };

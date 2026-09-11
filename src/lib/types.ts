@@ -56,6 +56,9 @@ export interface PortfolioState {
   /** Fetched dividend-history cache per symbol, used to estimate lifetime
    * dividends for periods without a manually logged DIVIDEND transaction. */
   dividendHistory: Record<string, DividendEvent[]>;
+  /** Fetched sector cache per symbol (e.g. "Technology"), used to group the
+   * allocation chart by sector instead of by individual holding. */
+  sectors: Record<string, string>;
 }
 
 export interface Holding {
