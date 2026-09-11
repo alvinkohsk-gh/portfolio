@@ -13,6 +13,35 @@ import {
 import { Card } from "@/components/Card";
 import { StockSearch } from "@/components/StockSearch";
 
+interface WatchlistRow {
+  symbol: string;
+  name?: string;
+  price?: number;
+  change?: number;
+  changePct?: number;
+  dayLow?: number;
+  dayHigh?: number;
+  previousClose?: number;
+}
+
+type Column = {
+  key: string;
+  label: string;
+  value: (r: WatchlistRow) => number;
+};
+
+// A missing value sorts as though it were the smallest possible, so rows
+// without a live quote yet fall to the start in ascending order and the end
+// in descending order, rather than throwing off the comparison with NaN.
+const MISSING = -Infinity;
+
+const COLUMNS: Column[] = [
+  { key: "price", label: "Price", value: (r) => r.price ?? MISSING },
+  { key: "change", label: "Change", value: (r) => r.change ?? MISSING },
+  { key: "dayLow", label: "Day Range", value: (r) => r.dayLow ?? MISSING },
+  { key: "previousClose", label: "Last Close", value: (r) => r.previousClose ?? MISSING },
+];
+
 export default function WatchlistPage() {
   const { state, addWatchlistItem, removeWatchlistItem } = usePortfolio();
   const [live, setLive] = useState<
@@ -21,6 +50,11 @@ export default function WatchlistPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [sort, setSort] = useState<{ key: string; dir: 1 | -1 }>({ key: "symbol", dir: 1 });
+
+  function toggleSort(key: string) {
+    setSort((s) => (s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: -1 }));
+  }
 
   function handleAdd(result: { symbol: string; name?: string }) {
     addWatchlistItem({ symbol: result.symbol, name: result.name });
@@ -56,6 +90,31 @@ export default function WatchlistPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchlistKey]);
 
+  const rows: WatchlistRow[] = state.watchlist.map((w) => {
+    const q = live[w.symbol];
+    const change = q?.previousClose != null ? q.price - q.previousClose : undefined;
+    const changePct =
+      change != null && q!.previousClose! > 0 ? (change / q!.previousClose!) * 100 : undefined;
+    return {
+      symbol: w.symbol,
+      name: w.name,
+      price: q?.price,
+      change,
+      changePct,
+      dayLow: q?.dayLow,
+      dayHigh: q?.dayHigh,
+      previousClose: q?.previousClose,
+    };
+  });
+
+  const sortedRows = [...rows].sort((a, b) => {
+    if (sort.key === "symbol") return sort.dir * a.symbol.localeCompare(b.symbol);
+    const col = COLUMNS.find((c) => c.key === sort.key);
+    const av = col ? col.value(a) : 0;
+    const bv = col ? col.value(b) : 0;
+    return sort.dir * (av - bv);
+  });
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -87,73 +146,77 @@ export default function WatchlistPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-neutral-800 text-left text-xs text-neutral-500">
-                  <th className="px-4 sm:px-5 py-2.5 font-medium">Symbol</th>
-                  <th className="px-4 sm:px-5 py-2.5 font-medium text-right">Price</th>
-                  <th className="px-4 sm:px-5 py-2.5 font-medium text-right">Change</th>
-                  <th className="px-4 sm:px-5 py-2.5 font-medium text-right">Day Range</th>
-                  <th className="px-4 sm:px-5 py-2.5 font-medium text-right">Last Close</th>
+                  <th
+                    onClick={() => toggleSort("symbol")}
+                    className="px-4 sm:px-5 py-2.5 font-medium cursor-pointer select-none hover:text-neutral-300"
+                  >
+                    Symbol{sort.key === "symbol" ? (sort.dir === 1 ? " ▲" : " ▼") : ""}
+                  </th>
+                  {COLUMNS.map((col) => (
+                    <th
+                      key={col.key}
+                      onClick={() => toggleSort(col.key)}
+                      className="px-4 sm:px-5 py-2.5 font-medium text-right cursor-pointer select-none whitespace-nowrap hover:text-neutral-300"
+                    >
+                      {col.label}
+                      {sort.key === col.key ? (sort.dir === 1 ? " ▲" : " ▼") : ""}
+                    </th>
+                  ))}
                   <th className="px-4 sm:px-5 py-2.5 font-medium text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {state.watchlist.map((w) => {
-                  const q = live[w.symbol];
-                  const change =
-                    q?.previousClose != null ? q.price - q.previousClose : undefined;
-                  const changePct =
-                    q?.previousClose != null && q.previousClose > 0
-                      ? (change! / q.previousClose) * 100
-                      : undefined;
-                  return (
-                    <tr
-                      key={w.symbol}
-                      className="border-b border-neutral-900 last:border-0 hover:bg-neutral-900/40"
+                {sortedRows.map((r) => (
+                  <tr
+                    key={r.symbol}
+                    className="border-b border-neutral-900 last:border-0 hover:bg-neutral-900/40"
+                  >
+                    <td className="px-4 sm:px-5 py-3">
+                      <div className="font-medium text-white">{r.symbol}</div>
+                      {r.name && <div className="text-xs text-neutral-500">{r.name}</div>}
+                    </td>
+                    <td className="px-4 sm:px-5 py-3 text-right tabular-nums text-white">
+                      {r.price != null ? formatCurrency(r.price, state.currency) : "—"}
+                    </td>
+                    <td
+                      className={`px-4 sm:px-5 py-3 text-right tabular-nums ${
+                        r.change != null ? gainColorClass(r.change) : "text-neutral-600"
+                      }`}
                     >
-                      <td className="px-4 sm:px-5 py-3">
-                        <div className="font-medium text-white">{w.symbol}</div>
-                        {w.name && <div className="text-xs text-neutral-500">{w.name}</div>}
-                      </td>
-                      <td className="px-4 sm:px-5 py-3 text-right tabular-nums text-white">
-                        {q ? formatCurrency(q.price, state.currency) : "—"}
-                      </td>
-                      <td
-                        className={`px-4 sm:px-5 py-3 text-right tabular-nums ${
-                          change != null ? gainColorClass(change) : "text-neutral-600"
-                        }`}
+                      {r.change != null ? (
+                        <>
+                          <div>{formatSignedCurrency(r.change, state.currency)}</div>
+                          <div className="text-xs opacity-80">
+                            {formatPercent(r.changePct!)}
+                          </div>
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="px-4 sm:px-5 py-3 text-right tabular-nums text-neutral-300">
+                      {r.dayLow != null && r.dayHigh != null
+                        ? `${formatCurrency(r.dayLow, state.currency)} – ${formatCurrency(
+                            r.dayHigh,
+                            state.currency
+                          )}`
+                        : "—"}
+                    </td>
+                    <td className="px-4 sm:px-5 py-3 text-right tabular-nums text-neutral-300">
+                      {r.previousClose != null
+                        ? formatCurrency(r.previousClose, state.currency)
+                        : "—"}
+                    </td>
+                    <td className="px-4 sm:px-5 py-3 text-right">
+                      <button
+                        onClick={() => removeWatchlistItem(r.symbol)}
+                        className="text-xs text-rose-500 hover:text-rose-400"
                       >
-                        {change != null ? (
-                          <>
-                            <div>{formatSignedCurrency(change, state.currency)}</div>
-                            <div className="text-xs opacity-80">{formatPercent(changePct!)}</div>
-                          </>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td className="px-4 sm:px-5 py-3 text-right tabular-nums text-neutral-300">
-                        {q?.dayLow != null && q?.dayHigh != null
-                          ? `${formatCurrency(q.dayLow, state.currency)} – ${formatCurrency(
-                              q.dayHigh,
-                              state.currency
-                            )}`
-                          : "—"}
-                      </td>
-                      <td className="px-4 sm:px-5 py-3 text-right tabular-nums text-neutral-300">
-                        {q?.previousClose != null
-                          ? formatCurrency(q.previousClose, state.currency)
-                          : "—"}
-                      </td>
-                      <td className="px-4 sm:px-5 py-3 text-right">
-                        <button
-                          onClick={() => removeWatchlistItem(w.symbol)}
-                          className="text-xs text-rose-500 hover:text-rose-400"
-                        >
-                          Remove
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
