@@ -50,6 +50,11 @@ const OPEN_COLUMNS: OpenColumn[] = [
   { key: "weight", label: "Port%", value: (h) => h.weight },
   { key: "quantity", label: "Shares", value: (h) => h.quantity },
   { key: "avgCost", label: "APrice", value: (h) => h.avgCost },
+  {
+    key: "dividendAdjustedAvgCost",
+    label: "APrice−Div",
+    value: (h) => h.dividendAdjustedAvgCost,
+  },
   { key: "currentPrice", label: "Close", value: (h) => h.currentPrice },
   { key: "marketValue", label: "Value", value: (h) => h.marketValue },
   { key: "dayChangePct", label: "Day%", value: (h) => h.dayChangePct },
@@ -291,6 +296,9 @@ export function HoldingsTable({
                       </td>
                       <td className="px-4 sm:px-5 py-3 text-right tabular-nums text-neutral-300">
                         {formatCurrency(h.avgCost, currency)}
+                      </td>
+                      <td className="px-4 sm:px-5 py-3 text-right tabular-nums text-neutral-300">
+                        {formatCurrency(h.dividendAdjustedAvgCost, currency)}
                       </td>
                       <td className="px-4 sm:px-5 py-3 text-right tabular-nums text-neutral-300">
                         {formatCurrency(h.currentPrice, currency)}
