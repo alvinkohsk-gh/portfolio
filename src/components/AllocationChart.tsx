@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { Holding } from "@/lib/types";
 import { formatCurrency, formatPercent } from "@/lib/format";
@@ -18,19 +19,42 @@ const COLORS = [
   "#c084fc",
 ];
 
+const UNKNOWN_SECTOR = "Other";
+
 export function AllocationChart({
   holdings,
   currency,
+  sectors = {},
 }: {
   holdings: Holding[];
   currency: string;
+  /** Sector per symbol (e.g. "Technology"), fetched from an external
+   * provider. Symbols missing here group under "Other" in sector view. */
+  sectors?: Record<string, string>;
 }) {
+  const [groupBy, setGroupBy] = useState<"symbol" | "sector">("symbol");
   const open = holdings.filter((h) => h.quantity > 0);
-  const data = open.map((h) => ({
-    name: h.symbol,
-    value: h.marketValue,
-    weight: h.weight,
-  }));
+
+  const data =
+    groupBy === "symbol"
+      ? open.map((h) => ({
+          name: h.symbol,
+          value: h.marketValue,
+          weight: h.weight,
+        }))
+      : Object.values(
+          open.reduce<Record<string, { name: string; value: number; weight: number }>>(
+            (groups, h) => {
+              const name = sectors[h.symbol] ?? UNKNOWN_SECTOR;
+              const g = groups[name] ?? { name, value: 0, weight: 0 };
+              g.value += h.marketValue;
+              g.weight += h.weight;
+              groups[name] = g;
+              return groups;
+            },
+            {}
+          )
+        ).sort((a, b) => b.value - a.value);
 
   if (data.length === 0) {
     return (
@@ -45,7 +69,31 @@ export function AllocationChart({
 
   return (
     <Card>
-      <CardTitle>Allocation</CardTitle>
+      <div className="flex items-center justify-between gap-3">
+        <CardTitle>Allocation</CardTitle>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setGroupBy("symbol")}
+            className={`px-2 py-1 rounded-md text-xs font-medium ${
+              groupBy === "symbol"
+                ? "bg-neutral-800 text-white"
+                : "text-neutral-500 hover:text-neutral-300"
+            }`}
+          >
+            By Symbol
+          </button>
+          <button
+            onClick={() => setGroupBy("sector")}
+            className={`px-2 py-1 rounded-md text-xs font-medium ${
+              groupBy === "sector"
+                ? "bg-neutral-800 text-white"
+                : "text-neutral-500 hover:text-neutral-300"
+            }`}
+          >
+            By Sector
+          </button>
+        </div>
+      </div>
       <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>

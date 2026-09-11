@@ -24,6 +24,7 @@ const emptyState: PortfolioState = {
   portfolios: defaultPortfolios(),
   activePortfolioId: ALL_PORTFOLIOS,
   dividendHistory: {},
+  sectors: {},
 };
 
 let state: PortfolioState = emptyState;
@@ -49,6 +50,7 @@ export function migrate(parsed: PortfolioState): PortfolioState {
       t.portfolioId ? t : { ...t, portfolioId: fallbackId }
     ),
     dividendHistory: parsed.dividendHistory ?? {},
+    sectors: parsed.sectors ?? {},
   };
 }
 
@@ -197,6 +199,15 @@ export function setDividendHistory(history: Record<string, DividendEvent[]>) {
   });
 }
 
+/** Merges freshly fetched sector data into the cache, keyed by symbol.
+ * Symbols not present in `sectors` keep whatever was cached before. */
+export function setSectors(sectors: Record<string, string>) {
+  commit({
+    ...state,
+    sectors: { ...state.sectors, ...sectors },
+  });
+}
+
 export function addWatchlistItem(item: WatchlistItem) {
   if (state.watchlist.some((w) => w.symbol === item.symbol)) return;
   commit({ ...state, watchlist: [...state.watchlist, item] });
@@ -256,5 +267,6 @@ export function clearAll() {
     portfolios: defaultPortfolios(),
     activePortfolioId: ALL_PORTFOLIOS,
     dividendHistory: {},
+    sectors: {},
   });
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePortfolio } from "@/lib/PortfolioProvider";
 import {
   computeHoldings,
@@ -11,6 +11,7 @@ import {
 } from "@/lib/portfolio";
 import { ALL_PORTFOLIOS } from "@/lib/types";
 import { fetchDividendHistory } from "@/lib/dividends";
+import { fetchSectors } from "@/lib/sectors";
 import { SummaryCards } from "@/components/SummaryCards";
 import { AllocationChart } from "@/components/AllocationChart";
 import { PerformanceChart } from "@/components/PerformanceChart";
@@ -18,7 +19,7 @@ import { HoldingsTable } from "@/components/HoldingsTable";
 import { DividendsTable } from "@/components/DividendsTable";
 
 export default function DashboardPage() {
-  const { state, setDividendHistory } = usePortfolio();
+  const { state, setDividendHistory, setSectors } = usePortfolio();
   const [refreshingDividends, setRefreshingDividends] = useState(false);
   const [dividendError, setDividendError] = useState<string | null>(null);
   const [dividendsUpdatedAt, setDividendsUpdatedAt] = useState<string | null>(null);
@@ -58,13 +59,35 @@ export default function DashboardPage() {
     }
   }
 
+  // Sectors rarely change, so this only fetches symbols not already cached
+  // in state - a symbol closed out and reopened, or shared across
+  // portfolios, is fetched once and reused from then on.
+  const openSymbols = holdings
+    .filter((h) => h.quantity > 0)
+    .map((h) => h.symbol)
+    .sort()
+    .join(",");
+  useEffect(() => {
+    const missing = openSymbols.split(",").filter((s) => s && !state.sectors[s]);
+    if (missing.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const { sectors } = await fetchSectors(missing);
+      if (!cancelled && Object.keys(sectors).length > 0) setSectors(sectors);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openSymbols]);
+
   return (
     <div className="flex flex-col gap-5">
       <h1 className="text-xl font-semibold text-white">{activeName}</h1>
       <SummaryCards summary={summary} currency={state.currency} />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <PerformanceChart data={performance} currency={state.currency} />
-        <AllocationChart holdings={holdings} currency={state.currency} />
+        <AllocationChart holdings={holdings} currency={state.currency} sectors={state.sectors} />
       </div>
       <HoldingsTable holdings={holdings} currency={state.currency} yieldMetrics={yieldMetrics} />
       <DividendsTable
