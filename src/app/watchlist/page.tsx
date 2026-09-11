@@ -3,7 +3,13 @@
 import { useEffect, useState } from "react";
 import { usePortfolio } from "@/lib/PortfolioProvider";
 import { fetchQuotes } from "@/lib/quotes";
-import { formatCurrency, formatDateTime, formatPercent, gainColorClass } from "@/lib/format";
+import {
+  formatCurrency,
+  formatDateTime,
+  formatPercent,
+  formatSignedCurrency,
+  gainColorClass,
+} from "@/lib/format";
 import { Card } from "@/components/Card";
 import { StockSearch } from "@/components/StockSearch";
 
@@ -115,7 +121,14 @@ export default function WatchlistPage() {
                           change != null ? gainColorClass(change) : "text-neutral-600"
                         }`}
                       >
-                        {change != null ? formatPercent(changePct!) : "—"}
+                        {change != null ? (
+                          <>
+                            <div>{formatSignedCurrency(change, state.currency)}</div>
+                            <div className="text-xs opacity-80">{formatPercent(changePct!)}</div>
+                          </>
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td className="px-4 sm:px-5 py-3 text-right tabular-nums text-neutral-300">
                         {q?.dayLow != null && q?.dayHigh != null
