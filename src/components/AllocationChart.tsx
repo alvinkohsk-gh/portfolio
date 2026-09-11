@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { Holding } from "@/lib/types";
+import { groupHoldingsBySector } from "@/lib/portfolio";
 import { formatCurrency, formatPercent } from "@/lib/format";
 import { Card, CardTitle } from "./Card";
 
@@ -18,8 +19,6 @@ const COLORS = [
   "#4ade80",
   "#c084fc",
 ];
-
-const UNKNOWN_SECTOR = "Other";
 
 export function AllocationChart({
   holdings,
@@ -42,19 +41,7 @@ export function AllocationChart({
           value: h.marketValue,
           weight: h.weight,
         }))
-      : Object.values(
-          open.reduce<Record<string, { name: string; value: number; weight: number }>>(
-            (groups, h) => {
-              const name = sectors[h.symbol] ?? UNKNOWN_SECTOR;
-              const g = groups[name] ?? { name, value: 0, weight: 0 };
-              g.value += h.marketValue;
-              g.weight += h.weight;
-              groups[name] = g;
-              return groups;
-            },
-            {}
-          )
-        ).sort((a, b) => b.value - a.value);
+      : groupHoldingsBySector(holdings, sectors);
 
   if (data.length === 0) {
     return (
