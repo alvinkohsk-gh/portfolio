@@ -28,6 +28,7 @@ export function usePortfolio() {
     setCurrency: store.setCurrency,
     addPortfolio: store.addPortfolio,
     renamePortfolio: store.renamePortfolio,
+    setPortfolioCurrency: store.setPortfolioCurrency,
     deletePortfolio: store.deletePortfolio,
     setActivePortfolio: store.setActivePortfolio,
     replaceState: store.replaceState,

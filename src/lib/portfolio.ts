@@ -404,6 +404,21 @@ export function scopedToPortfolio(state: PortfolioState, portfolioId: string): P
   };
 }
 
+/** A portfolio's display currency, falling back to the global default
+ * (state.currency) when it has none of its own set. */
+export function currencyForPortfolio(state: PortfolioState, portfolioId: string): string {
+  return state.portfolios.find((p) => p.id === portfolioId)?.currency ?? state.currency;
+}
+
+/** The currency to format amounts in for whatever's currently selected in
+ * the portfolio switcher - the global default while viewing "All
+ * Portfolios" (since amounts from differently-labeled portfolios are being
+ * combined anyway), or that one portfolio's own currency otherwise. */
+export function activeCurrency(state: PortfolioState): string {
+  if (state.activePortfolioId === ALL_PORTFOLIOS) return state.currency;
+  return currencyForPortfolio(state, state.activePortfolioId);
+}
+
 export function allSymbols(state: PortfolioState): string[] {
   const set = new Set<string>();
   for (const t of state.transactions) set.add(t.symbol);

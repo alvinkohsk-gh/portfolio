@@ -3,6 +3,10 @@ export type TransactionType = "BUY" | "SELL" | "DIVIDEND";
 export interface Portfolio {
   id: string;
   name: string;
+  /** Display currency for this portfolio, overriding the global default
+   * (PortfolioState.currency) when set. Like the global setting, this only
+   * relabels amounts - it does not convert values between currencies. */
+  currency?: string;
 }
 
 export interface Transaction {
