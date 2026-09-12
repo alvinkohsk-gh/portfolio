@@ -9,9 +9,10 @@ const INDEXES = [
   { symbol: "^GSPC", label: "S&P 500" },
   { symbol: "^IXIC", label: "Nasdaq" },
   { symbol: "^DJI", label: "Dow Jones" },
+  { symbol: "^STI", label: "STI (SGX)" },
 ];
 
-/** A compact row of the three major US index levels and today's change.
+/** A compact row of the major US and SGX index levels and today's change.
  * Index levels are points, not currency, so these are formatted as plain
  * numbers rather than through formatCurrency. */
 export function MarketIndices() {
@@ -35,14 +36,14 @@ export function MarketIndices() {
   return (
     <Card>
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-        <h2 className="text-sm font-medium text-neutral-400">US Markets</h2>
+        <h2 className="text-sm font-medium text-neutral-400">Markets</h2>
         {updatedAt && (
           <span className="text-[11px] text-neutral-600">
             Updated {formatDateTime(updatedAt)}
           </span>
         )}
       </div>
-      <div className="grid grid-cols-3 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
         {INDEXES.map(({ symbol, label }) => {
           const q = quotes[symbol];
           const change = q?.previousClose != null ? q.price - q.previousClose : undefined;
