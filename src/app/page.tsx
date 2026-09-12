@@ -13,6 +13,7 @@ import {
 import { ALL_PORTFOLIOS } from "@/lib/types";
 import { fetchDividendHistory } from "@/lib/dividends";
 import { fetchSectors } from "@/lib/sectors";
+import { MarketIndices } from "@/components/MarketIndices";
 import { SummaryCards } from "@/components/SummaryCards";
 import { AllocationChart } from "@/components/AllocationChart";
 import { PerformanceChart } from "@/components/PerformanceChart";
@@ -88,6 +89,7 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col gap-5">
       <h1 className="text-xl font-semibold text-white">{activeName}</h1>
+      <MarketIndices />
       <SummaryCards summary={summary} currency={currency} />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <PerformanceChart data={performance} currency={currency} />
