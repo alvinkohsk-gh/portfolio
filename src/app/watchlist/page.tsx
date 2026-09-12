@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePortfolio } from "@/lib/PortfolioProvider";
 import { fetchQuotes } from "@/lib/quotes";
+import { fetchPressure, PressureResult } from "@/lib/pressure";
 import {
   formatCurrency,
   formatDateTime,
@@ -22,6 +23,7 @@ interface WatchlistRow {
   dayLow?: number;
   dayHigh?: number;
   previousClose?: number;
+  buyPct?: number;
 }
 
 type Column = {
@@ -40,13 +42,19 @@ const COLUMNS: Column[] = [
   { key: "change", label: "Change", value: (r) => r.change ?? MISSING },
   { key: "dayLow", label: "Day Range", value: (r) => r.dayLow ?? MISSING },
   { key: "previousClose", label: "Last Close", value: (r) => r.previousClose ?? MISSING },
+  { key: "buyPct", label: "Pressure", value: (r) => r.buyPct ?? MISSING },
 ];
+
+// How often the page silently re-fetches quotes and pressure while open, so
+// the Pressure column tracks intraday shifts without a manual refresh.
+const LIVE_REFRESH_MS = 60_000;
 
 export default function WatchlistPage() {
   const { state, addWatchlistItem, removeWatchlistItem } = usePortfolio();
   const [live, setLive] = useState<
     Record<string, { price: number; previousClose?: number; dayLow?: number; dayHigh?: number }>
   >({});
+  const [pressure, setPressure] = useState<Record<string, PressureResult>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
@@ -65,8 +73,13 @@ export default function WatchlistPage() {
     setLoading(true);
     setError(null);
     try {
-      const { quotes, errors } = await fetchQuotes(state.watchlist.map((w) => w.symbol));
+      const symbols = state.watchlist.map((w) => w.symbol);
+      const [{ quotes, errors }, { pressure: freshPressure }] = await Promise.all([
+        fetchQuotes(symbols),
+        fetchPressure(symbols),
+      ]);
       setLive((prev) => ({ ...prev, ...quotes }));
+      setPressure((prev) => ({ ...prev, ...freshPressure }));
       setUpdatedAt(new Date().toISOString());
       if (Object.keys(quotes).length === 0 && errors.length > 0) {
         setError("Couldn't reach the price provider right now.");
@@ -78,15 +91,21 @@ export default function WatchlistPage() {
     }
   }
 
-  // Fetch quotes (including last close) as soon as the watchlist has symbols
-  // to show, so the table isn't empty until the user clicks "Refresh
-  // prices" - re-runs whenever the set of watched symbols changes (e.g. a
-  // new symbol added), not on every render.
+  // Fetch quotes and pressure as soon as the watchlist has symbols to show,
+  // so the table isn't empty until the user clicks "Refresh prices" -
+  // re-runs whenever the set of watched symbols changes (e.g. a new symbol
+  // added), not on every render. Then keeps silently re-fetching on an
+  // interval so the Pressure column tracks the trading day live rather than
+  // freezing at whatever it read on page load.
   const watchlistKey = state.watchlist.map((w) => w.symbol).join(",");
   useEffect(() => {
     if (!watchlistKey) return;
     const id = setTimeout(() => handleRefresh(), 0);
-    return () => clearTimeout(id);
+    const interval = setInterval(() => handleRefresh(), LIVE_REFRESH_MS);
+    return () => {
+      clearTimeout(id);
+      clearInterval(interval);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchlistKey]);
 
@@ -104,6 +123,7 @@ export default function WatchlistPage() {
       dayLow: q?.dayLow,
       dayHigh: q?.dayHigh,
       previousClose: q?.previousClose,
+      buyPct: pressure[w.symbol]?.buyPct,
     };
   });
 
@@ -207,6 +227,21 @@ export default function WatchlistPage() {
                         ? formatCurrency(r.previousClose, state.currency)
                         : "—"}
                     </td>
+                    <td className="px-4 sm:px-5 py-3 text-right tabular-nums text-neutral-300">
+                      {r.buyPct != null ? (
+                        <div className="flex items-center justify-end gap-2">
+                          <div className="w-14 h-1.5 rounded-full bg-rose-500/40 overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-emerald-500"
+                              style={{ width: `${Math.round(r.buyPct)}%` }}
+                            />
+                          </div>
+                          <span className="w-9 text-right">{Math.round(r.buyPct)}%</span>
+                        </div>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                     <td className="px-4 sm:px-5 py-3 text-right">
                       <button
                         onClick={() => removeWatchlistItem(r.symbol)}
@@ -223,7 +258,9 @@ export default function WatchlistPage() {
         )}
         {updatedAt && (
           <div className="px-4 sm:px-5 py-2.5 border-t border-neutral-900 text-[11px] text-neutral-600">
-            Last updated {formatDateTime(updatedAt)}
+            Last updated {formatDateTime(updatedAt)} - Pressure auto-refreshes every minute and
+            estimates buying vs. selling volume from today&apos;s 1-minute bars (an
+            uptick/downtick proxy, not real order-flow data).
           </div>
         )}
       </Card>
