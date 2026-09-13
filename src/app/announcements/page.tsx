@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePortfolio } from "@/lib/PortfolioProvider";
-import { Announcement, fetchAnnouncements } from "@/lib/announcements";
+import { Announcement, AnnouncementsResponse, fetchAnnouncements } from "@/lib/announcements";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { Card } from "@/components/Card";
 
@@ -17,6 +17,8 @@ const SOURCE_STYLES: Record<Announcement["source"], string> = {
 export default function AnnouncementsPage() {
   const { state } = usePortfolio();
   const [items, setItems] = useState<Record<string, Announcement[]>>({});
+  const [debug, setDebug] = useState<AnnouncementsResponse["debug"]>({});
+  const [showDebug, setShowDebug] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
@@ -29,10 +31,11 @@ export default function AnnouncementsPage() {
     setLoading(true);
     setError(null);
     try {
-      const { announcements, errors } = await fetchAnnouncements(
+      const { announcements, errors, debug } = await fetchAnnouncements(
         watchlist.map((w) => ({ symbol: w.symbol, name: w.name }))
       );
       setItems(announcements);
+      setDebug(debug);
       setUpdatedAt(new Date().toISOString());
       if (Object.keys(announcements).length === 0 && errors.length > 0) {
         setError("Couldn't reach any announcement source right now.");
@@ -109,6 +112,22 @@ export default function AnnouncementsPage() {
       </p>
 
       {error && <p className="text-xs text-amber-400">{error}</p>}
+
+      {watchlist.length > 0 && Object.keys(debug).length > 0 && (
+        <div className="text-xs">
+          <button
+            onClick={() => setShowDebug((s) => !s)}
+            className="text-neutral-500 hover:text-neutral-300 underline"
+          >
+            {showDebug ? "Hide" : "Show"} source diagnostics
+          </button>
+          {showDebug && (
+            <pre className="mt-2 p-3 rounded-md bg-neutral-950 border border-neutral-800 text-neutral-400 overflow-x-auto whitespace-pre-wrap">
+              {JSON.stringify(debug, null, 2)}
+            </pre>
+          )}
+        </div>
+      )}
 
       <Card className="p-0 overflow-hidden">
         {watchlist.length === 0 ? (
