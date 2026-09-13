@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Portfolio, Transaction, TransactionType } from "@/lib/types";
+import type { StockSearchResult } from "@/app/api/search/route";
 
 interface Props {
   open: boolean;
@@ -80,6 +81,28 @@ function TransactionForm({
     initial ? formFromTransaction(initial) : emptyForm(defaultPortfolioId)
   );
 
+  // Fills in the company name from the symbol lookup once the user finishes
+  // typing a symbol, but only when they haven't already typed a name
+  // themselves - so this never clobbers a manual entry.
+  async function lookupCompanyName(symbol: string) {
+    const trimmed = symbol.trim();
+    if (!trimmed || form.name.trim()) return;
+    try {
+      const res = await fetch(`/api/search?q=${encodeURIComponent(trimmed)}`);
+      const data: { results?: StockSearchResult[] } = await res.json();
+      const bareSymbol = trimmed.replace(/\.SI$/i, "").toUpperCase();
+      const match = (data.results ?? []).find((r) => {
+        const bareResult = r.symbol.replace(/\.SI$/i, "").toUpperCase();
+        return bareResult === bareSymbol;
+      });
+      if (match) {
+        setForm((f) => (f.name.trim() ? f : { ...f, name: match.name }));
+      }
+    } catch {
+      // Search unreachable - the name field just stays blank for manual entry.
+    }
+  }
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.symbol.trim() || !form.quantity || !form.price) return;
@@ -151,6 +174,7 @@ function TransactionForm({
               list="known-symbols"
               value={form.symbol}
               onChange={(e) => setForm((f) => ({ ...f, symbol: e.target.value.toUpperCase() }))}
+              onBlur={(e) => lookupCompanyName(e.target.value)}
               placeholder="AAPL or D05.SI"
               required
               className="rounded-md bg-neutral-950 border border-neutral-700 px-2.5 py-2 text-sm text-white uppercase"

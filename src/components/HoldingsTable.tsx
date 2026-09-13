@@ -50,9 +50,15 @@ const OPEN_COLUMNS: OpenColumn[] = [
   { key: "weight", label: "Port%", value: (h) => h.weight },
   { key: "quantity", label: "Shares", value: (h) => h.quantity },
   { key: "avgCost", label: "APrice", value: (h) => h.avgCost },
+  {
+    key: "dividendAdjustedAvgCost",
+    label: "APrice−Div",
+    value: (h) => h.dividendAdjustedAvgCost,
+  },
   { key: "currentPrice", label: "Close", value: (h) => h.currentPrice },
   { key: "marketValue", label: "Value", value: (h) => h.marketValue },
   { key: "dayChangePct", label: "Day%", value: (h) => h.dayChangePct },
+  { key: "gain", label: "P&L", value: (h) => h.gain },
   { key: "gainPct", label: "P&L%", value: (h) => h.gainPct },
   { key: "divPct", label: "Div%", value: divPct },
   { key: "totalReturnPct", label: "P&L+Div%", value: (h) => h.totalReturnPct },
@@ -98,13 +104,25 @@ export function HoldingsTable({
     dir: -1,
   });
 
-  const open = useMemo(() => holdings.filter((h) => h.quantity > 0), [holdings]);
+  const open = useMemo(() => holdings.filter((h) => h.quantity !== 0), [holdings]);
   const closed = useMemo(
     (): ClosedHolding[] =>
       holdings
-        .filter((h) => h.quantity <= 0)
+        .filter((h) => h.quantity === 0)
         .map((h) => ({ ...h, totalClosed: h.realizedGain + h.dividends })),
     [holdings]
+  );
+
+  /** Lifetime totals across every closed position, regardless of the
+   * symbol/name filter below - mirrors how the Open tab's yield line above
+   * uses the full open list rather than the filtered one. */
+  const closedTotals = useMemo(
+    () => ({
+      realizedGain: closed.reduce((sum, h) => sum + h.realizedGain, 0),
+      dividends: closed.reduce((sum, h) => sum + h.dividends, 0),
+      actual: closed.reduce((sum, h) => sum + h.totalClosed, 0),
+    }),
+    [closed]
   );
 
   const query = filter.trim().toLowerCase();
@@ -187,6 +205,28 @@ export function HoldingsTable({
             </span>
           </div>
         )}
+        {view === "closed" && closed.length > 0 && (
+          <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-neutral-500 pt-1.5">
+            <span>
+              Lifetime P&amp;L:{" "}
+              <span className={gainColorClass(closedTotals.realizedGain)}>
+                {formatSignedCurrency(closedTotals.realizedGain, currency)}
+              </span>
+            </span>
+            <span>
+              Dividends:{" "}
+              <span className="text-neutral-300">
+                {formatCurrency(closedTotals.dividends, currency)}
+              </span>
+            </span>
+            <span>
+              Actual (P&amp;L+Div):{" "}
+              <span className={gainColorClass(closedTotals.actual)}>
+                {formatSignedCurrency(closedTotals.actual, currency)}
+              </span>
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="px-4 sm:px-5 pt-3">
@@ -258,6 +298,9 @@ export function HoldingsTable({
                         {formatCurrency(h.avgCost, currency)}
                       </td>
                       <td className="px-4 sm:px-5 py-3 text-right tabular-nums text-neutral-300">
+                        {formatCurrency(h.dividendAdjustedAvgCost, currency)}
+                      </td>
+                      <td className="px-4 sm:px-5 py-3 text-right tabular-nums text-neutral-300">
                         {formatCurrency(h.currentPrice, currency)}
                         {h.priceSource === "manual" && (
                           <span className="ml-1 text-neutral-600">(manual)</span>
@@ -276,6 +319,13 @@ export function HoldingsTable({
                         ) : (
                           <span className="text-neutral-600">—</span>
                         )}
+                      </td>
+                      <td
+                        className={`px-4 sm:px-5 py-3 text-right tabular-nums ${gainColorClass(
+                          h.gain
+                        )}`}
+                      >
+                        {formatSignedCurrency(h.gain, currency)}
                       </td>
                       <td
                         className={`px-4 sm:px-5 py-3 text-right tabular-nums ${gainColorClass(

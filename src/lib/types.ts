@@ -3,6 +3,10 @@ export type TransactionType = "BUY" | "SELL" | "DIVIDEND";
 export interface Portfolio {
   id: string;
   name: string;
+  /** Display currency for this portfolio, overriding the global default
+   * (PortfolioState.currency) when set. Like the global setting, this only
+   * relabels amounts - it does not convert values between currencies. */
+  currency?: string;
 }
 
 export interface Transaction {
@@ -56,6 +60,9 @@ export interface PortfolioState {
   /** Fetched dividend-history cache per symbol, used to estimate lifetime
    * dividends for periods without a manually logged DIVIDEND transaction. */
   dividendHistory: Record<string, DividendEvent[]>;
+  /** Fetched sector cache per symbol (e.g. "Technology"), used to group the
+   * allocation chart by sector instead of by individual holding. */
+  sectors: Record<string, string>;
 }
 
 export interface Holding {

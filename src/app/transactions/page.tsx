@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { usePortfolio } from "@/lib/PortfolioProvider";
-import { allSymbols } from "@/lib/portfolio";
+import { allSymbols, currencyForPortfolio } from "@/lib/portfolio";
 import { ALL_PORTFOLIOS, Transaction } from "@/lib/types";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Card } from "@/components/Card";
@@ -113,6 +113,7 @@ export default function TransactionsPage() {
                     t.type === "DIVIDEND"
                       ? t.price
                       : t.quantity * t.price + (t.fees ?? 0) * (t.type === "BUY" ? 1 : -1);
+                  const currency = currencyForPortfolio(state, t.portfolioId);
                   return (
                     <tr
                       key={t.id}
@@ -144,10 +145,10 @@ export default function TransactionsPage() {
                         {t.quantity}
                       </td>
                       <td className="px-4 sm:px-5 py-3 text-right tabular-nums text-neutral-300">
-                        {formatCurrency(t.price, state.currency)}
+                        {formatCurrency(t.price, currency)}
                       </td>
                       <td className="px-4 sm:px-5 py-3 text-right tabular-nums text-white">
-                        {formatCurrency(total, state.currency)}
+                        {formatCurrency(total, currency)}
                       </td>
                       <td className="px-4 sm:px-5 py-3 text-right whitespace-nowrap">
                         <button
