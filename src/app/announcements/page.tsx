@@ -9,6 +9,7 @@ import { Card } from "@/components/Card";
 type FeedItem = Announcement & { symbol: string };
 
 const SOURCE_STYLES: Record<Announcement["source"], string> = {
+  "SEC EDGAR": "bg-amber-500/15 text-amber-400",
   Nasdaq: "bg-blue-500/15 text-blue-400",
   SGinvestors: "bg-violet-500/15 text-violet-400",
   "Corporate Action": "bg-emerald-500/15 text-emerald-400",
@@ -106,9 +107,11 @@ export default function AnnouncementsPage() {
       </div>
 
       <p className="text-xs text-neutral-500">
-        Corporate actions (dividends, stock splits) come from verified market data. Nasdaq
-        press releases and SGinvestors.io entries are news/press coverage, not official
-        regulatory filings, and may be incomplete.
+        SEC EDGAR filings (US-listed stocks) and corporate actions (dividends, stock splits)
+        are official/verified data. Nasdaq press releases and SGinvestors.io entries are
+        news/press coverage, not official regulatory filings, and may be incomplete. SGX
+        doesn&apos;t have an equivalent free official filings feed, so SGX-listed stocks rely
+        on SGinvestors.io alone.
       </p>
 
       {error && <p className="text-xs text-amber-400">{error}</p>}

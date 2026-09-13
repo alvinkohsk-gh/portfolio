@@ -5,7 +5,10 @@ export type { Announcement, SourceDebug };
 export interface AnnouncementsResponse {
   announcements: Record<string, Announcement[]>;
   errors: string[];
-  debug: Record<string, { nasdaq?: SourceDebug; splits?: SourceDebug }> & { sgx?: SourceDebug };
+  debug: Record<
+    string,
+    { nasdaq?: SourceDebug; secEdgar?: SourceDebug; splits?: SourceDebug }
+  > & { sgx?: SourceDebug };
 }
 
 export async function fetchAnnouncements(

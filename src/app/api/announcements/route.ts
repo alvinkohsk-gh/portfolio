@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export interface Announcement {
   date: string; // ISO date, yyyy-mm-dd, when known - otherwise ""
   title: string;
-  source: "Nasdaq" | "SGinvestors" | "Corporate Action";
+  source: "SEC EDGAR" | "Nasdaq" | "SGinvestors" | "Corporate Action";
   link?: string;
 }
 
@@ -77,6 +77,113 @@ async function fetchNasdaqPressReleases(
         };
       })
       .filter((a): a is Announcement => a !== null);
+
+    return { items, debug: { attempted: true, httpStatus: res.status, itemCount: items.length } };
+  } catch (err) {
+    return {
+      items: [],
+      debug: { attempted: true, error: err instanceof Error ? err.message : String(err) },
+    };
+  }
+}
+
+/** The SEC's fair-access policy for www.sec.gov / data.sec.gov asks
+ * requests to identify a real application + contact in the User-Agent
+ * rather than a generic browser string, so these two hosts get their own
+ * header instead of the shared REQUEST_HEADERS used for everything else. */
+const SEC_HEADERS = {
+  "User-Agent": "PortfolioTracker/1.0 (contact: portfoliotracker.app@example.com)",
+  Accept: "application/json",
+};
+
+let cikMapPromise: Promise<Record<string, string>> | null = null;
+
+/** SEC EDGAR indexes companies by CIK (Central Index Key), not ticker, so
+ * this fetches the SEC's own official ticker -> CIK mapping once per warm
+ * server instance and reuses it across requests/symbols rather than
+ * re-fetching a multi-megabyte file every time. */
+function loadCikMap(): Promise<Record<string, string>> {
+  if (!cikMapPromise) {
+    cikMapPromise = (async () => {
+      const res = await fetch("https://www.sec.gov/files/company_tickers.json", {
+        headers: SEC_HEADERS,
+        signal: AbortSignal.timeout(8000),
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error(`company_tickers.json returned ${res.status}`);
+      const data = await res.json();
+      const map: Record<string, string> = {};
+      for (const entry of Object.values(data) as Array<{ ticker?: string; cik_str?: number }>) {
+        if (entry.ticker && entry.cik_str != null) {
+          map[entry.ticker.toUpperCase()] = String(entry.cik_str).padStart(10, "0");
+        }
+      }
+      return map;
+    })().catch((err) => {
+      // Let the next request retry instead of caching a failure forever.
+      cikMapPromise = null;
+      throw err;
+    });
+  }
+  return cikMapPromise;
+}
+
+// Material-event forms - the actual regulatory definition of a "company
+// announcement" for a US-listed issuer, as opposed to routine periodic
+// reports (10-K/10-Q) or ownership filings.
+const MATERIAL_EVENT_FORMS = new Set(["8-K", "8-K/A", "6-K", "6-K/A"]);
+
+/** Official filings straight from the SEC's own EDGAR system - genuine
+ * regulatory disclosures, unlike the unofficial press/news feeds elsewhere
+ * in this file. US-listed symbols only (EDGAR doesn't cover SGX). */
+async function fetchSecFilings(
+  symbol: string
+): Promise<{ items: Announcement[]; debug: SourceDebug }> {
+  try {
+    const cikMap = await loadCikMap();
+    const cik = cikMap[symbol.toUpperCase()];
+    if (!cik) {
+      return {
+        items: [],
+        debug: { attempted: true, error: "symbol not found in SEC ticker map" },
+      };
+    }
+
+    const res = await fetch(`https://data.sec.gov/submissions/CIK${cik}.json`, {
+      headers: SEC_HEADERS,
+      signal: AbortSignal.timeout(8000),
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      return { items: [], debug: { attempted: true, httpStatus: res.status } };
+    }
+
+    const data = await res.json();
+    const recent = data?.filings?.recent;
+    const forms: unknown[] = recent?.form ?? [];
+    const dates: unknown[] = recent?.filingDate ?? [];
+    const accessionNumbers: unknown[] = recent?.accessionNumber ?? [];
+    const primaryDocs: unknown[] = recent?.primaryDocument ?? [];
+    const cikNumeric = String(Number(cik));
+
+    const items: Announcement[] = [];
+    for (let i = 0; i < forms.length && items.length < 10; i++) {
+      const form = forms[i];
+      if (typeof form !== "string" || !MATERIAL_EVENT_FORMS.has(form)) continue;
+      const date = typeof dates[i] === "string" ? (dates[i] as string) : "";
+      const accession = typeof accessionNumbers[i] === "string" ? (accessionNumbers[i] as string) : "";
+      const primaryDoc = typeof primaryDocs[i] === "string" ? (primaryDocs[i] as string) : "";
+      const accessionNoDashes = accession.replace(/-/g, "");
+      items.push({
+        date,
+        title: `SEC filing: Form ${form}`,
+        source: "SEC EDGAR",
+        link:
+          accessionNoDashes && primaryDoc
+            ? `https://www.sec.gov/Archives/edgar/data/${cikNumeric}/${accessionNoDashes}/${primaryDoc}`
+            : undefined,
+      });
+    }
 
     return { items, debug: { attempted: true, httpStatus: res.status, itemCount: items.length } };
   } catch (err) {
@@ -222,9 +329,10 @@ export async function GET(req: NextRequest) {
 
   const announcements: Record<string, Announcement[]> = {};
   const errors: string[] = [];
-  const debug: Record<string, { nasdaq?: SourceDebug; splits?: SourceDebug }> & {
-    sgx?: SourceDebug;
-  } = {};
+  const debug: Record<
+    string,
+    { nasdaq?: SourceDebug; secEdgar?: SourceDebug; splits?: SourceDebug }
+  > & { sgx?: SourceDebug } = {};
 
   const sgxSymbols = symbols.filter((s) => s.toUpperCase().endsWith(".SI"));
   const matchTerms = symbols.map((symbol, i) => ({ symbol, name: names[i] || undefined }));
@@ -233,10 +341,16 @@ export async function GET(req: NextRequest) {
     ...symbols.map(async (symbol) => {
       try {
         const items: Announcement[] = [];
-        const symbolDebug: { nasdaq?: SourceDebug; splits?: SourceDebug } = {};
+        const symbolDebug: { nasdaq?: SourceDebug; secEdgar?: SourceDebug; splits?: SourceDebug } =
+          {};
 
         if (!symbol.toUpperCase().endsWith(".SI")) {
-          const { items: nasdaqItems, debug: nasdaqDebug } = await fetchNasdaqPressReleases(symbol);
+          const [
+            { items: secItems, debug: secDebug },
+            { items: nasdaqItems, debug: nasdaqDebug },
+          ] = await Promise.all([fetchSecFilings(symbol), fetchNasdaqPressReleases(symbol)]);
+          items.push(...secItems);
+          symbolDebug.secEdgar = secDebug;
           items.push(...nasdaqItems);
           symbolDebug.nasdaq = nasdaqDebug;
         }
