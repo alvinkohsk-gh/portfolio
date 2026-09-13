@@ -74,6 +74,7 @@ export default function AnnouncementsPage() {
           date: d.date,
           title: `Dividend: ${d.amount} per share`,
           source: "Corporate Action",
+          summary: "A cash payment distributed to shareholders out of the company's profits.",
         });
       }
     }
@@ -187,6 +188,9 @@ export default function AnnouncementsPage() {
                         </a>
                       ) : (
                         f.title
+                      )}
+                      {f.summary && (
+                        <p className="mt-1 text-xs text-neutral-500">{f.summary}</p>
                       )}
                     </td>
                   </tr>

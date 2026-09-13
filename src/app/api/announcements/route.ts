@@ -15,7 +15,19 @@ export interface Announcement {
     | "SGX"
     | "Google News";
   link?: string;
+  /** A brief, human-readable explanation of what this announcement is
+   * about - the source's own snippet/excerpt when it provides one, or
+   * otherwise a short generic description of what that source/form type
+   * means, so a bare headline isn't the only context shown. */
+  summary?: string;
 }
+
+const FORM_DESCRIPTIONS: Record<string, string> = {
+  "8-K": "Official SEC filing disclosing a material event (e.g. a major transaction, leadership change, or other significant development).",
+  "8-K/A": "Amended SEC filing correcting or adding to a previously disclosed material event.",
+  "6-K": "Official SEC filing by a foreign private issuer disclosing material information required in its home market.",
+  "6-K/A": "Amended version of a foreign private issuer's material event disclosure.",
+};
 
 /** Per-source outcome for one fetch attempt, surfaced to the client so a
  * silently-empty result (bot-blocked, markup changed, JS-rendered page,
@@ -69,6 +81,7 @@ async function fetchNasdaqPressReleases(
         const relativeUrl = typeof row.url === "string" ? row.url : undefined;
         const created = typeof row.created === "string" ? row.created : undefined;
         const parsedDate = created ? new Date(created) : null;
+        const excerpt = typeof row.excerpt === "string" ? row.excerpt : undefined;
         return {
           date:
             parsedDate && !Number.isNaN(parsedDate.getTime())
@@ -81,6 +94,10 @@ async function fetchNasdaqPressReleases(
               ? relativeUrl
               : `https://www.nasdaq.com${relativeUrl}`
             : undefined,
+          summary:
+            excerpt && excerpt.length > 0
+              ? excerpt
+              : "Press release covering company news - not an official regulatory filing.",
         };
       })
       .filter((a): a is Announcement => a !== null);
@@ -189,6 +206,7 @@ async function fetchSecFilings(
           accessionNoDashes && primaryDoc
             ? `https://www.sec.gov/Archives/edgar/data/${cikNumeric}/${accessionNoDashes}/${primaryDoc}`
             : undefined,
+        summary: FORM_DESCRIPTIONS[form] ?? "Official SEC regulatory filing.",
       });
     }
 
@@ -231,6 +249,8 @@ async function fetchSplits(symbol: string): Promise<{ items: Announcement[]; deb
         date: new Date(s.date * 1000).toISOString().slice(0, 10),
         title: s.splitRatio ? `Stock split ${s.splitRatio}` : "Stock split",
         source: "Corporate Action" as const,
+        summary:
+          "A change in the number of outstanding shares - existing shares are divided (or combined) without changing the total value held.",
       }));
 
     return { items, debug: { attempted: true, httpStatus: res.status, itemCount: items.length } };
@@ -297,6 +317,8 @@ async function fetchSgxAnnouncements(
               ? href
               : `https://sginvestors.io${href}`
             : undefined,
+          summary:
+            "SGX company announcement surfaced via SGinvestors.io's news feed - not itself the official filing.",
         });
         result[symbol] = list;
         matchedCount++;
@@ -359,11 +381,13 @@ async function fetchYahooNews(
         if (typeof title !== "string" || title.length === 0) return null;
         const link = typeof row.link === "string" ? row.link : undefined;
         const pubTime = typeof row.providerPublishTime === "number" ? row.providerPublishTime : undefined;
+        const publisher = typeof row.publisher === "string" ? row.publisher : undefined;
         return {
           date: pubTime ? new Date(pubTime * 1000).toISOString().slice(0, 10) : "",
           title,
           source: "Yahoo Finance",
           link,
+          summary: `News article${publisher ? ` from ${publisher}` : ""} about the company, surfaced via Yahoo Finance - not an official filing.`,
         };
       })
       .filter((a): a is Announcement => a !== null);
@@ -413,6 +437,7 @@ async function fetchSgxOfficialApi(
         const dateRaw = row.date ?? row.broadcast_date ?? row.submitted_date;
         const parsedDate = typeof dateRaw === "string" ? new Date(dateRaw) : null;
         const link = row.url ?? row.file_url ?? row.link;
+        const description = row.summary ?? row.description ?? row.category;
         return {
           date:
             parsedDate && !Number.isNaN(parsedDate.getTime())
@@ -421,6 +446,10 @@ async function fetchSgxOfficialApi(
           title,
           source: "SGX",
           link: typeof link === "string" ? link : undefined,
+          summary:
+            typeof description === "string" && description.length > 0
+              ? description
+              : "SGX company announcement (unverified endpoint - shape not publicly documented).",
         };
       })
       .filter((a): a is Announcement => a !== null);
@@ -469,11 +498,20 @@ async function fetchGoogleNewsRss(
       const link = $(el).find("link").first().text().trim();
       const pubDate = $(el).find("pubDate").first().text().trim();
       const parsedDate = pubDate ? new Date(pubDate) : null;
+      const rawDescription = $(el).find("description").first().text();
+      // Google's description field is itself an HTML snippet (an <a> tag
+      // wrapping the headline plus the source name), so strip tags down to
+      // plain text rather than showing raw markup.
+      const plainDescription = cheerio.load(rawDescription).text().replace(/\s+/g, " ").trim();
       items.push({
         date: parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate.toISOString().slice(0, 10) : "",
         title,
         source: "Google News",
         link: link || undefined,
+        summary:
+          plainDescription.length > 0 && plainDescription !== title
+            ? plainDescription
+            : "News coverage about the company, surfaced via Google News - not an official filing.",
       });
     });
 
