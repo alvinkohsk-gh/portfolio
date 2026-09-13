@@ -6,9 +6,28 @@ export const dynamic = "force-dynamic";
 export interface Announcement {
   date: string; // ISO date, yyyy-mm-dd, when known - otherwise ""
   title: string;
-  source: "SEC EDGAR" | "Nasdaq" | "SGinvestors" | "Corporate Action";
+  source:
+    | "SEC EDGAR"
+    | "Nasdaq"
+    | "SGinvestors"
+    | "Corporate Action"
+    | "Yahoo Finance"
+    | "SGX"
+    | "Google News";
   link?: string;
+  /** A brief, human-readable explanation of what this announcement is
+   * about - the source's own snippet/excerpt when it provides one, or
+   * otherwise a short generic description of what that source/form type
+   * means, so a bare headline isn't the only context shown. */
+  summary?: string;
 }
+
+const FORM_DESCRIPTIONS: Record<string, string> = {
+  "8-K": "Official SEC filing disclosing a material event (e.g. a major transaction, leadership change, or other significant development).",
+  "8-K/A": "Amended SEC filing correcting or adding to a previously disclosed material event.",
+  "6-K": "Official SEC filing by a foreign private issuer disclosing material information required in its home market.",
+  "6-K/A": "Amended version of a foreign private issuer's material event disclosure.",
+};
 
 /** Per-source outcome for one fetch attempt, surfaced to the client so a
  * silently-empty result (bot-blocked, markup changed, JS-rendered page,
@@ -62,6 +81,7 @@ async function fetchNasdaqPressReleases(
         const relativeUrl = typeof row.url === "string" ? row.url : undefined;
         const created = typeof row.created === "string" ? row.created : undefined;
         const parsedDate = created ? new Date(created) : null;
+        const excerpt = typeof row.excerpt === "string" ? row.excerpt : undefined;
         return {
           date:
             parsedDate && !Number.isNaN(parsedDate.getTime())
@@ -74,6 +94,10 @@ async function fetchNasdaqPressReleases(
               ? relativeUrl
               : `https://www.nasdaq.com${relativeUrl}`
             : undefined,
+          summary:
+            excerpt && excerpt.length > 0
+              ? excerpt
+              : "Press release covering company news - not an official regulatory filing.",
         };
       })
       .filter((a): a is Announcement => a !== null);
@@ -182,6 +206,7 @@ async function fetchSecFilings(
           accessionNoDashes && primaryDoc
             ? `https://www.sec.gov/Archives/edgar/data/${cikNumeric}/${accessionNoDashes}/${primaryDoc}`
             : undefined,
+        summary: FORM_DESCRIPTIONS[form] ?? "Official SEC regulatory filing.",
       });
     }
 
@@ -224,6 +249,8 @@ async function fetchSplits(symbol: string): Promise<{ items: Announcement[]; deb
         date: new Date(s.date * 1000).toISOString().slice(0, 10),
         title: s.splitRatio ? `Stock split ${s.splitRatio}` : "Stock split",
         source: "Corporate Action" as const,
+        summary:
+          "A change in the number of outstanding shares - existing shares are divided (or combined) without changing the total value held.",
       }));
 
     return { items, debug: { attempted: true, httpStatus: res.status, itemCount: items.length } };
@@ -290,6 +317,8 @@ async function fetchSgxAnnouncements(
               ? href
               : `https://sginvestors.io${href}`
             : undefined,
+          summary:
+            "SGX company announcement surfaced via SGinvestors.io's news feed - not itself the official filing.",
         });
         result[symbol] = list;
         matchedCount++;
@@ -317,6 +346,184 @@ async function fetchSgxAnnouncements(
   }
 }
 
+/** Yahoo Finance's unofficial search endpoint returns a `news` array
+ * alongside quote matches - the same news feed shown on a stock's Yahoo
+ * Finance page. Queried by company name (falls back to bare symbol) since
+ * the search endpoint matches free text rather than a specific ticker
+ * field. SGX symbols only - other exchanges already have SEC/Nasdaq
+ * coverage above. */
+async function fetchYahooNews(
+  symbol: string,
+  name?: string
+): Promise<{ items: Announcement[]; debug: SourceDebug }> {
+  const query = name && name.length > 2 ? name : symbol.replace(/\.SI$/i, "");
+  const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(
+    query
+  )}&newsCount=10&quotesCount=0`;
+
+  try {
+    const res = await fetch(url, {
+      headers: { ...REQUEST_HEADERS, accept: "application/json" },
+      signal: AbortSignal.timeout(8000),
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      return { items: [], debug: { attempted: true, httpStatus: res.status } };
+    }
+
+    const data = await res.json();
+    const news: unknown[] = data?.news ?? [];
+
+    const items = news
+      .map((raw): Announcement | null => {
+        const row = raw as Record<string, unknown>;
+        const title = row.title;
+        if (typeof title !== "string" || title.length === 0) return null;
+        const link = typeof row.link === "string" ? row.link : undefined;
+        const pubTime = typeof row.providerPublishTime === "number" ? row.providerPublishTime : undefined;
+        const publisher = typeof row.publisher === "string" ? row.publisher : undefined;
+        return {
+          date: pubTime ? new Date(pubTime * 1000).toISOString().slice(0, 10) : "",
+          title,
+          source: "Yahoo Finance",
+          link,
+          summary: `News article${publisher ? ` from ${publisher}` : ""} about the company, surfaced via Yahoo Finance - not an official filing.`,
+        };
+      })
+      .filter((a): a is Announcement => a !== null);
+
+    return { items, debug: { attempted: true, httpStatus: res.status, itemCount: items.length } };
+  } catch (err) {
+    return {
+      items: [],
+      debug: { attempted: true, error: err instanceof Error ? err.message : String(err) },
+    };
+  }
+}
+
+/** SGX itself exposes a JSON API (api.sgx.com) behind its own website's
+ * announcement search page, but its exact request/response shape isn't
+ * publicly documented - this is a best-effort guess at the endpoint used
+ * by sgx.com's "Company Announcements" search, and is expected to need
+ * adjustment once actually verified against production. Kept fully
+ * best-effort like everything else in this file: any shape mismatch or
+ * failure just yields zero items rather than throwing. */
+async function fetchSgxOfficialApi(
+  symbol: string
+): Promise<{ items: Announcement[]; debug: SourceDebug }> {
+  const bareSymbol = symbol.replace(/\.SI$/i, "");
+  const url = `https://api.sgx.com/announcements/v1.0/?issuer_code=${encodeURIComponent(
+    bareSymbol
+  )}&pagestart=0&pagesize=10`;
+
+  try {
+    const res = await fetch(url, {
+      headers: { ...REQUEST_HEADERS, accept: "application/json" },
+      signal: AbortSignal.timeout(8000),
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      return { items: [], debug: { attempted: true, httpStatus: res.status } };
+    }
+
+    const data = await res.json();
+    const rows: unknown[] = data?.data ?? data?.items ?? [];
+
+    const items = rows
+      .map((raw): Announcement | null => {
+        const row = raw as Record<string, unknown>;
+        const title = row.title ?? row.announcement_title ?? row.headline;
+        if (typeof title !== "string" || title.length === 0) return null;
+        const dateRaw = row.date ?? row.broadcast_date ?? row.submitted_date;
+        const parsedDate = typeof dateRaw === "string" ? new Date(dateRaw) : null;
+        const link = row.url ?? row.file_url ?? row.link;
+        const description = row.summary ?? row.description ?? row.category;
+        return {
+          date:
+            parsedDate && !Number.isNaN(parsedDate.getTime())
+              ? parsedDate.toISOString().slice(0, 10)
+              : "",
+          title,
+          source: "SGX",
+          link: typeof link === "string" ? link : undefined,
+          summary:
+            typeof description === "string" && description.length > 0
+              ? description
+              : "SGX company announcement (unverified endpoint - shape not publicly documented).",
+        };
+      })
+      .filter((a): a is Announcement => a !== null);
+
+    return { items, debug: { attempted: true, httpStatus: res.status, itemCount: items.length } };
+  } catch (err) {
+    return {
+      items: [],
+      debug: { attempted: true, error: err instanceof Error ? err.message : String(err) },
+    };
+  }
+}
+
+/** Google News RSS is a public, no-key search feed - queried by company
+ * name (falls back to bare symbol) restricted to Singapore/English results
+ * so a "DBS" style name doesn't pull in unrelated global noise. It's
+ * general news coverage, not a regulatory or exchange source, so it's
+ * clearly labelled "Google News" rather than implied to be official. */
+async function fetchGoogleNewsRss(
+  symbol: string,
+  name?: string
+): Promise<{ items: Announcement[]; debug: SourceDebug }> {
+  const query = name && name.length > 2 ? name : symbol.replace(/\.SI$/i, "");
+  const url = `https://news.google.com/rss/search?q=${encodeURIComponent(
+    `${query} SGX`
+  )}&hl=en-SG&gl=SG&ceid=SG:en`;
+
+  try {
+    const res = await fetch(url, {
+      headers: REQUEST_HEADERS,
+      signal: AbortSignal.timeout(8000),
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      return { items: [], debug: { attempted: true, httpStatus: res.status } };
+    }
+
+    const xml = await res.text();
+    const $ = cheerio.load(xml, { xmlMode: true });
+
+    const items: Announcement[] = [];
+    $("item").each((_, el) => {
+      if (items.length >= 10) return;
+      const title = $(el).find("title").first().text().trim();
+      if (!title) return;
+      const link = $(el).find("link").first().text().trim();
+      const pubDate = $(el).find("pubDate").first().text().trim();
+      const parsedDate = pubDate ? new Date(pubDate) : null;
+      const rawDescription = $(el).find("description").first().text();
+      // Google's description field is itself an HTML snippet (an <a> tag
+      // wrapping the headline plus the source name), so strip tags down to
+      // plain text rather than showing raw markup.
+      const plainDescription = cheerio.load(rawDescription).text().replace(/\s+/g, " ").trim();
+      items.push({
+        date: parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate.toISOString().slice(0, 10) : "",
+        title,
+        source: "Google News",
+        link: link || undefined,
+        summary:
+          plainDescription.length > 0 && plainDescription !== title
+            ? plainDescription
+            : "News coverage about the company, surfaced via Google News - not an official filing.",
+      });
+    });
+
+    return { items, debug: { attempted: true, httpStatus: res.status, itemCount: items.length } };
+  } catch (err) {
+    return {
+      items: [],
+      debug: { attempted: true, error: err instanceof Error ? err.message : String(err) },
+    };
+  }
+}
+
 export async function GET(req: NextRequest) {
   const symbolsParam = req.nextUrl.searchParams.get("symbols") ?? "";
   const namesParam = req.nextUrl.searchParams.get("names") ?? "";
@@ -331,7 +538,14 @@ export async function GET(req: NextRequest) {
   const errors: string[] = [];
   const debug: Record<
     string,
-    { nasdaq?: SourceDebug; secEdgar?: SourceDebug; splits?: SourceDebug }
+    {
+      nasdaq?: SourceDebug;
+      secEdgar?: SourceDebug;
+      splits?: SourceDebug;
+      yahooNews?: SourceDebug;
+      sgxApi?: SourceDebug;
+      googleNews?: SourceDebug;
+    }
   > & { sgx?: SourceDebug } = {};
 
   const sgxSymbols = symbols.filter((s) => s.toUpperCase().endsWith(".SI"));
@@ -341,8 +555,15 @@ export async function GET(req: NextRequest) {
     ...symbols.map(async (symbol) => {
       try {
         const items: Announcement[] = [];
-        const symbolDebug: { nasdaq?: SourceDebug; secEdgar?: SourceDebug; splits?: SourceDebug } =
-          {};
+        const symbolDebug: {
+          nasdaq?: SourceDebug;
+          secEdgar?: SourceDebug;
+          splits?: SourceDebug;
+          yahooNews?: SourceDebug;
+          sgxApi?: SourceDebug;
+          googleNews?: SourceDebug;
+        } = {};
+        const name = matchTerms.find((m) => m.symbol === symbol)?.name;
 
         if (!symbol.toUpperCase().endsWith(".SI")) {
           const [
@@ -353,6 +574,22 @@ export async function GET(req: NextRequest) {
           symbolDebug.secEdgar = secDebug;
           items.push(...nasdaqItems);
           symbolDebug.nasdaq = nasdaqDebug;
+        } else {
+          const [
+            { items: yahooItems, debug: yahooDebug },
+            { items: sgxApiItems, debug: sgxApiDebug },
+            { items: googleItems, debug: googleDebug },
+          ] = await Promise.all([
+            fetchYahooNews(symbol, name),
+            fetchSgxOfficialApi(symbol),
+            fetchGoogleNewsRss(symbol, name),
+          ]);
+          items.push(...yahooItems);
+          symbolDebug.yahooNews = yahooDebug;
+          items.push(...sgxApiItems);
+          symbolDebug.sgxApi = sgxApiDebug;
+          items.push(...googleItems);
+          symbolDebug.googleNews = googleDebug;
         }
         const { items: splitItems, debug: splitsDebug } = await fetchSplits(symbol);
         items.push(...splitItems);
