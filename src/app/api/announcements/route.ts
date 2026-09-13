@@ -40,6 +40,20 @@ export interface SourceDebug {
   error?: string;
 }
 
+/** Yahoo's and Google's search endpoints do free-text/fuzzy matching, not
+ * an exact filter - for a thinly-covered small-cap stock they can fall
+ * back to loosely-related or outright unrelated trending content (e.g. a
+ * "Cathie Wood" market-commentary piece surfacing for an unrelated SGX
+ * counter) rather than returning nothing. Requiring the headline to
+ * actually mention the symbol or company name weeds most of that out. */
+function mentionsCompany(text: string, symbol: string, name?: string): boolean {
+  const haystack = text.toLowerCase();
+  const bareSymbol = symbol.replace(/\.SI$/i, "").toLowerCase();
+  if (bareSymbol.length >= 3 && haystack.includes(bareSymbol)) return true;
+  if (name && name.length > 2 && haystack.includes(name.toLowerCase())) return true;
+  return false;
+}
+
 const SGX_LATEST_URL = "https://sginvestors.io/news/company-announcement/latest/";
 const REQUEST_HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; PortfolioTracker/1.0)" };
 
@@ -296,6 +310,10 @@ async function fetchSgxAnnouncements(
       const text = $(el).text().replace(/\s+/g, " ").trim();
       if (text.length < 12) return;
       const href = $(el).attr("href");
+      // An anchor with no href isn't a real announcement link (usually a
+      // page-internal bookmark or a styling hook) - skip it rather than
+      // surfacing a headline with nowhere to click through to.
+      if (!href) return;
 
       for (const { symbol, name } of matchTerms) {
         const bareSymbol = symbol.replace(/\.SI$/i, "");
@@ -312,11 +330,7 @@ async function fetchSgxAnnouncements(
           date: dateMatch ? dateMatch[1] : "",
           title: text,
           source: "SGinvestors",
-          link: href
-            ? href.startsWith("http")
-              ? href
-              : `https://sginvestors.io${href}`
-            : undefined,
+          link: href.startsWith("http") ? href : `https://sginvestors.io${href}`,
           summary:
             "SGX company announcement surfaced via SGinvestors.io's news feed - not itself the official filing.",
         });
@@ -390,7 +404,8 @@ async function fetchYahooNews(
           summary: `News article${publisher ? ` from ${publisher}` : ""} about the company, surfaced via Yahoo Finance - not an official filing.`,
         };
       })
-      .filter((a): a is Announcement => a !== null);
+      .filter((a): a is Announcement => a !== null)
+      .filter((a) => mentionsCompany(a.title, symbol, name));
 
     return { items, debug: { attempted: true, httpStatus: res.status, itemCount: items.length } };
   } catch (err) {
@@ -503,6 +518,7 @@ async function fetchGoogleNewsRss(
       // wrapping the headline plus the source name), so strip tags down to
       // plain text rather than showing raw markup.
       const plainDescription = cheerio.load(rawDescription).text().replace(/\s+/g, " ").trim();
+      if (!mentionsCompany(title, symbol, name)) return;
       items.push({
         date: parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate.toISOString().slice(0, 10) : "",
         title,
