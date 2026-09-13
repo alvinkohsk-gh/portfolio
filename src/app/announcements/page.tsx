@@ -13,6 +13,9 @@ const SOURCE_STYLES: Record<Announcement["source"], string> = {
   Nasdaq: "bg-blue-500/15 text-blue-400",
   SGinvestors: "bg-violet-500/15 text-violet-400",
   "Corporate Action": "bg-emerald-500/15 text-emerald-400",
+  "Yahoo Finance": "bg-purple-500/15 text-purple-400",
+  SGX: "bg-rose-500/15 text-rose-400",
+  "Google News": "bg-sky-500/15 text-sky-400",
 };
 
 export default function AnnouncementsPage() {
@@ -108,10 +111,11 @@ export default function AnnouncementsPage() {
 
       <p className="text-xs text-neutral-500">
         SEC EDGAR filings (US-listed stocks) and corporate actions (dividends, stock splits)
-        are official/verified data. Nasdaq press releases and SGinvestors.io entries are
-        news/press coverage, not official regulatory filings, and may be incomplete. SGX
-        doesn&apos;t have an equivalent free official filings feed, so SGX-listed stocks rely
-        on SGinvestors.io alone.
+        are official/verified data. Nasdaq press releases, SGinvestors.io, Yahoo Finance and
+        Google News entries are news/press coverage, not official regulatory filings, and may
+        be incomplete. SGX doesn&apos;t publish a free, documented official filings API, so the
+        &quot;SGX&quot; source here is a best-effort, unverified attempt at SGX&apos;s own
+        announcement search endpoint and may not return results.
       </p>
 
       {error && <p className="text-xs text-amber-400">{error}</p>}

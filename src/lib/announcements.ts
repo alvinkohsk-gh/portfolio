@@ -7,7 +7,14 @@ export interface AnnouncementsResponse {
   errors: string[];
   debug: Record<
     string,
-    { nasdaq?: SourceDebug; secEdgar?: SourceDebug; splits?: SourceDebug }
+    {
+      nasdaq?: SourceDebug;
+      secEdgar?: SourceDebug;
+      splits?: SourceDebug;
+      yahooNews?: SourceDebug;
+      sgxApi?: SourceDebug;
+      googleNews?: SourceDebug;
+    }
   > & { sgx?: SourceDebug };
 }
 
