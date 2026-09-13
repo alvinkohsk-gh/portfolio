@@ -74,6 +74,7 @@ export default function AnnouncementsPage() {
           date: d.date,
           title: `Dividend: ${d.amount} per share`,
           source: "Corporate Action",
+          link: `https://finance.yahoo.com/quote/${encodeURIComponent(w.symbol)}/history/`,
           summary: "A cash payment distributed to shareholders out of the company's profits.",
         });
       }

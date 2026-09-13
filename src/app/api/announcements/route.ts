@@ -263,6 +263,7 @@ async function fetchSplits(symbol: string): Promise<{ items: Announcement[]; deb
         date: new Date(s.date * 1000).toISOString().slice(0, 10),
         title: s.splitRatio ? `Stock split ${s.splitRatio}` : "Stock split",
         source: "Corporate Action" as const,
+        link: `https://finance.yahoo.com/quote/${encodeURIComponent(symbol)}/history/`,
         summary:
           "A change in the number of outstanding shares - existing shares are divided (or combined) without changing the total value held.",
       }));
