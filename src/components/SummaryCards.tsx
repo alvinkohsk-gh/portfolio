@@ -24,7 +24,7 @@ export function SummaryCards({
       valueClass: gainColorClass(summary.totalGain),
     },
     {
-      label: "Today",
+      label: "Today's P/L",
       value: formatSignedCurrency(summary.dayChange, currency),
       sub: formatPercent(summary.dayChangePct),
       subClass: gainColorClass(summary.dayChange),
