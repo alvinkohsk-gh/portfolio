@@ -9,6 +9,10 @@ interface RunningLot {
   quantity: number;
   avgCost: number;
   realizedGain: number;
+  /** Portion of realizedGain from closing trades dated today - included in
+   * realizedGain, broken out here so "today's P&L" can include gains/losses
+   * locked in today alongside the unrealized change in open positions. */
+  realizedGainToday: number;
   dividends: number;
   estimatedDividends: number;
   name?: string;
@@ -76,12 +80,14 @@ export function computeHoldings(state: PortfolioState): Holding[] {
   const sorted = [...state.transactions].sort((a, b) =>
     a.date.localeCompare(b.date)
   );
+  const todayStr = new Date().toISOString().slice(0, 10);
 
   for (const tx of sorted) {
     const lot = bySymbol.get(tx.symbol) ?? {
       quantity: 0,
       avgCost: 0,
       realizedGain: 0,
+      realizedGainToday: 0,
       dividends: 0,
       estimatedDividends: 0,
       name: tx.name,
@@ -95,7 +101,9 @@ export function computeHoldings(state: PortfolioState): Holding[] {
         // out at a gain/loss versus the short's average sale price; any
         // excess opens a new long position.
         const coverQty = Math.min(tx.quantity, -lot.quantity);
-        lot.realizedGain += coverQty * (lot.avgCost - tx.price) - fees;
+        const coverGain = coverQty * (lot.avgCost - tx.price) - fees;
+        lot.realizedGain += coverGain;
+        if (tx.date === todayStr) lot.realizedGainToday += coverGain;
         lot.quantity += coverQty;
         const remaining = tx.quantity - coverQty;
         if (remaining > 0) {
@@ -119,7 +127,9 @@ export function computeHoldings(state: PortfolioState): Holding[] {
       const fees = tx.fees ?? 0;
       if (lot.quantity > 0) {
         const sellQty = Math.min(tx.quantity, lot.quantity);
-        lot.realizedGain += sellQty * (tx.price - lot.avgCost) - fees;
+        const sellGain = sellQty * (tx.price - lot.avgCost) - fees;
+        lot.realizedGain += sellGain;
+        if (tx.date === todayStr) lot.realizedGainToday += sellGain;
         lot.quantity -= sellQty;
         const remaining = tx.quantity - sellQty;
         if (remaining > 0) {
@@ -224,6 +234,7 @@ export function computeHoldings(state: PortfolioState): Holding[] {
       dayChangePct,
       weight: 0, // filled in below
       realizedGain: lot.realizedGain,
+      realizedGainToday: lot.realizedGainToday,
       dividends: lot.dividends,
       estimatedDividends: lot.estimatedDividends,
       totalReturn,

@@ -88,6 +88,9 @@ export interface Holding {
   dayChangePct: number;
   weight: number;
   realizedGain: number;
+  /** Portion of `realizedGain` locked in by a closing trade (a sell against
+   * a long, or a buy covering a short) dated today. */
+  realizedGainToday: number;
   dividends: number;
   /** Portion of `dividends` estimated from fetched dividend history for
    * periods without a manually logged DIVIDEND transaction, rather than
@@ -119,6 +122,10 @@ export interface PortfolioSummary {
   dayChange: number;
   dayChangePct: number;
   totalRealizedGain: number;
+  /** Sum of realizedGainToday across all holdings - gains/losses locked in
+   * by trades closed today, as opposed to `dayChange` which is the
+   * unrealized change in still-open positions. */
+  totalRealizedGainToday: number;
   totalDividends: number;
   holdingsCount: number;
 }
