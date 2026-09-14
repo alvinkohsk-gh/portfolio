@@ -31,6 +31,13 @@ export function SummaryCards({
       valueClass: gainColorClass(summary.dayChange),
     },
     {
+      label: "Today's Realized P/L",
+      value: formatSignedCurrency(summary.totalRealizedGainToday, currency),
+      sub: summary.totalRealizedGainToday !== 0 ? "From trades closed today" : "No trades closed today",
+      subClass: "text-neutral-500",
+      valueClass: gainColorClass(summary.totalRealizedGainToday),
+    },
+    {
       label: "Dividends Received",
       value: formatCurrency(summary.totalDividends, currency),
       sub:
@@ -42,7 +49,7 @@ export function SummaryCards({
   ];
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+    <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
       {items.map((item) => (
         <Card key={item.label}>
           <div className="text-xs font-medium text-neutral-500">{item.label}</div>

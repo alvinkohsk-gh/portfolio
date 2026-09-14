@@ -7,6 +7,7 @@ export function computeSummary(holdings: Holding[]): PortfolioSummary {
   const dayChange = openHoldings.reduce((s, h) => s + h.dayChange, 0);
   const previousTotal = totalValue - dayChange;
   const totalRealizedGain = holdings.reduce((s, h) => s + h.realizedGain, 0);
+  const totalRealizedGainToday = holdings.reduce((s, h) => s + h.realizedGainToday, 0);
   const totalDividends = holdings.reduce((s, h) => s + h.dividends, 0);
 
   return {
@@ -17,6 +18,7 @@ export function computeSummary(holdings: Holding[]): PortfolioSummary {
     dayChange,
     dayChangePct: previousTotal > 0 ? (dayChange / previousTotal) * 100 : 0,
     totalRealizedGain,
+    totalRealizedGainToday,
     totalDividends,
     holdingsCount: openHoldings.length,
   };
