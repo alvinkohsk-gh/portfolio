@@ -283,7 +283,17 @@ export function HoldingsTable({
                       className="border-b border-neutral-900 last:border-0 hover:bg-neutral-900/40"
                     >
                       <td className="px-4 sm:px-5 py-3">
-                        <div className="font-medium text-white">{h.symbol}</div>
+                        <div className="font-medium text-white flex items-center gap-1.5">
+                          {h.symbol}
+                          {h.priceCurrencyMismatch && (
+                            <span
+                              title={`Price quoted in ${h.priceCurrency}, not the currency this symbol normally trades in. This usually means the ticker resolved to the wrong company on the wrong exchange - check the symbol (e.g. add ".SI") and every number in this row.`}
+                              className="text-amber-400 cursor-help"
+                            >
+                              ⚠
+                            </span>
+                          )}
+                        </div>
                         <div className="text-xs text-neutral-500 truncate max-w-[140px]">
                           {h.name ?? "—"}
                         </div>

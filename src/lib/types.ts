@@ -100,6 +100,15 @@ export interface Holding {
    * how much of the original cost basis dividends have paid back. */
   dividendAdjustedAvgCost: number;
   firstBuyDate?: string;
+  /** Currency the live quote itself was priced in (e.g. "USD"), as reported
+   * by the price provider - independent of the portfolio's display
+   * currency used to format this holding's numbers. */
+  priceCurrency?: string;
+  /** True when priceCurrency is known and doesn't match what the symbol's
+   * suffix implies (e.g. a ".SI" counter priced in USD) - a strong signal
+   * that a bare ticker resolved to the wrong company on the wrong
+   * exchange, silently, and every derived number here is meaningless. */
+  priceCurrencyMismatch?: boolean;
 }
 
 export interface PortfolioSummary {

@@ -45,6 +45,17 @@ function estimateDividendIncome(
   return total;
 }
 
+/** The currency a symbol's live quote should be in, based on the exchange
+ * suffix convention this app understands (see api/quote/route.ts's bare
+ * ticker -> .SI fallback). Undefined for symbols this app has no
+ * expectation for (any other exchange suffix), which just skips the
+ * mismatch check rather than flagging a false positive. */
+function expectedCurrency(symbol: string): string | undefined {
+  if (symbol.toUpperCase().endsWith(".SI")) return "SGD";
+  if (!symbol.includes(".")) return "USD";
+  return undefined;
+}
+
 function pushQuantityPoint(
   timelines: Map<string, QuantityPoint[]>,
   symbol: string,
@@ -176,6 +187,10 @@ export function computeHoldings(state: PortfolioState): Holding[] {
     const totalReturnPct = costBasis !== 0 ? (totalReturn / Math.abs(costBasis)) * 100 : 0;
     const dividendAdjustedAvgCost =
       lot.quantity > 0 ? lot.avgCost - lot.dividends / lot.quantity : lot.avgCost;
+    const priceCurrency = priceInfo?.currency;
+    const expected = expectedCurrency(symbol);
+    const priceCurrencyMismatch =
+      priceCurrency != null && expected != null && priceCurrency.toUpperCase() !== expected;
     const fiftyTwoWeekLow = priceInfo?.fiftyTwoWeekLow;
     const fiftyTwoWeekHigh = priceInfo?.fiftyTwoWeekHigh;
     const fiftyTwoWeekPct =
@@ -215,6 +230,8 @@ export function computeHoldings(state: PortfolioState): Holding[] {
       totalReturnPct,
       dividendAdjustedAvgCost,
       firstBuyDate: lot.firstBuyDate,
+      priceCurrency,
+      priceCurrencyMismatch,
     });
   }
 
