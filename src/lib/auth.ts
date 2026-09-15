@@ -6,8 +6,10 @@ import { PortfolioState } from "./types";
  * username/password only - the user never sees or provides an email. A
  * deterministic fake address derived from the (normalized) username gets
  * real password hashing, sessions, and auth.uid()-based RLS for free
- * without building any of that by hand. */
-const FAKE_EMAIL_DOMAIN = "users.portfolio-tracker.local";
+ * without building any of that by hand. Must use a real, registrable TLD:
+ * Supabase validates the domain against the public suffix list, so a
+ * made-up one like ".local" is rejected outright as an invalid email. */
+const FAKE_EMAIL_DOMAIN = "users.portfolio-tracker-app.com";
 
 const USERNAME_PATTERN = /^[a-z0-9_]{3,20}$/;
 
