@@ -246,9 +246,16 @@ export function computeHoldings(state: PortfolioState): Holding[] {
     });
   }
 
-  const totalValue = holdings.reduce((sum, h) => sum + h.marketValue, 0);
+  // Weight is "share of the (long) portfolio" - only open long positions
+  // count toward the denominator, matching what the allocation chart and
+  // sector concentration actually display (both filter to quantity > 0).
+  // Including short positions here would drag the total down by their
+  // negative market value and throw off every other holding's percentage.
+  const totalValue = holdings
+    .filter((h) => h.quantity > 0)
+    .reduce((sum, h) => sum + h.marketValue, 0);
   for (const h of holdings) {
-    h.weight = totalValue > 0 ? (h.marketValue / totalValue) * 100 : 0;
+    h.weight = totalValue > 0 && h.quantity > 0 ? (h.marketValue / totalValue) * 100 : 0;
   }
 
   return holdings.sort((a, b) => b.marketValue - a.marketValue);
