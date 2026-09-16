@@ -24,6 +24,22 @@ interface WatchlistRow {
   dayHigh?: number;
   previousClose?: number;
   buyPct?: number;
+  tags: string[];
+  targetAbove?: number;
+  targetBelow?: number;
+}
+
+/** Which bound (if any) the current price has reached/crossed. Purely a
+ * visual flag - no email/push notifications are sent. */
+function targetHit(r: WatchlistRow): "above" | "below" | null {
+  if (r.price == null) return null;
+  if (r.targetAbove != null && r.price >= r.targetAbove) return "above";
+  if (r.targetBelow != null && r.price <= r.targetBelow) return "below";
+  return null;
+}
+
+function parseTags(raw: string): string[] {
+  return [...new Set(raw.split(",").map((t) => t.trim()).filter(Boolean))];
 }
 
 type Column = {
@@ -50,7 +66,7 @@ const COLUMNS: Column[] = [
 const LIVE_REFRESH_MS = 60_000;
 
 export default function WatchlistPage() {
-  const { state, addWatchlistItem, removeWatchlistItem } = usePortfolio();
+  const { state, addWatchlistItem, removeWatchlistItem, updateWatchlistItem } = usePortfolio();
   const [live, setLive] = useState<
     Record<string, { price: number; previousClose?: number; dayLow?: number; dayHigh?: number }>
   >({});
@@ -59,6 +75,7 @@ export default function WatchlistPage() {
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 }>({ key: "symbol", dir: 1 });
+  const [tagFilter, setTagFilter] = useState("ALL");
 
   function toggleSort(key: string) {
     setSort((s) => (s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: -1 }));
@@ -124,10 +141,18 @@ export default function WatchlistPage() {
       dayHigh: q?.dayHigh,
       previousClose: q?.previousClose,
       buyPct: pressure[w.symbol]?.buyPct,
+      tags: w.tags ?? [],
+      targetAbove: w.targetAbove,
+      targetBelow: w.targetBelow,
     };
   });
 
-  const sortedRows = [...rows].sort((a, b) => {
+  const allTags = [...new Set(rows.flatMap((r) => r.tags))].sort();
+
+  const filteredRows =
+    tagFilter === "ALL" ? rows : rows.filter((r) => r.tags.includes(tagFilter));
+
+  const sortedRows = [...filteredRows].sort((a, b) => {
     if (sort.key === "symbol") return sort.dir * a.symbol.localeCompare(b.symbol);
     const col = COLUMNS.find((c) => c.key === sort.key);
     const av = col ? col.value(a) : 0;
@@ -139,13 +164,29 @@ export default function WatchlistPage() {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-white">Watchlist</h1>
-        <button
-          onClick={handleRefresh}
-          disabled={loading || state.watchlist.length === 0}
-          className="px-3 py-2 rounded-md text-sm font-medium bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white"
-        >
-          {loading ? "Refreshing…" : "Refresh prices"}
-        </button>
+        <div className="flex items-center gap-2">
+          {allTags.length > 0 && (
+            <select
+              value={tagFilter}
+              onChange={(e) => setTagFilter(e.target.value)}
+              className="rounded-md bg-neutral-900 border border-neutral-700 px-2.5 py-2 text-sm text-white"
+            >
+              <option value="ALL">All tags</option>
+              {allTags.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          )}
+          <button
+            onClick={handleRefresh}
+            disabled={loading || state.watchlist.length === 0}
+            className="px-3 py-2 rounded-md text-sm font-medium bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white"
+          >
+            {loading ? "Refreshing…" : "Refresh prices"}
+          </button>
+        </div>
       </div>
 
       <Card>
@@ -182,17 +223,37 @@ export default function WatchlistPage() {
                       {sort.key === col.key ? (sort.dir === 1 ? " ▲" : " ▼") : ""}
                     </th>
                   ))}
+                  <th className="px-4 sm:px-5 py-2.5 font-medium">Tags</th>
+                  <th className="px-4 sm:px-5 py-2.5 font-medium">Alert</th>
                   <th className="px-4 sm:px-5 py-2.5 font-medium text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {sortedRows.map((r) => (
+                {sortedRows.map((r) => {
+                  const hit = targetHit(r);
+                  return (
                   <tr
                     key={r.symbol}
-                    className="border-b border-neutral-900 last:border-0 hover:bg-neutral-900/40"
+                    className={`border-b border-neutral-900 last:border-0 hover:bg-neutral-900/40 ${
+                      hit ? "bg-amber-500/5" : ""
+                    }`}
                   >
                     <td className="px-4 sm:px-5 py-3">
-                      <div className="font-medium text-white">{r.symbol}</div>
+                      <div className="font-medium text-white flex items-center gap-1.5">
+                        {r.symbol}
+                        {hit && (
+                          <span
+                            title={
+                              hit === "above"
+                                ? `Price reached your target of ${r.targetAbove}`
+                                : `Price fell to your target of ${r.targetBelow}`
+                            }
+                            className="text-amber-400"
+                          >
+                            🎯
+                          </span>
+                        )}
+                      </div>
                       {r.name && <div className="text-xs text-neutral-500">{r.name}</div>}
                     </td>
                     <td className="px-4 sm:px-5 py-3 text-right tabular-nums text-white">
@@ -242,6 +303,50 @@ export default function WatchlistPage() {
                         "—"
                       )}
                     </td>
+                    <td className="px-4 sm:px-5 py-3">
+                      <input
+                        type="text"
+                        key={`tags-${r.symbol}-${r.tags.join(",")}`}
+                        defaultValue={r.tags.join(", ")}
+                        placeholder="e.g. core, spec"
+                        onBlur={(e) =>
+                          updateWatchlistItem(r.symbol, { tags: parseTags(e.target.value) })
+                        }
+                        className="w-28 rounded-md bg-neutral-950 border border-neutral-800 px-2 py-1 text-xs text-neutral-300 placeholder:text-neutral-700"
+                      />
+                    </td>
+                    <td className="px-4 sm:px-5 py-3">
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          step="any"
+                          key={`above-${r.symbol}-${r.targetAbove ?? ""}`}
+                          defaultValue={r.targetAbove ?? ""}
+                          placeholder="≥"
+                          title="Alert when price rises to or above this"
+                          onBlur={(e) =>
+                            updateWatchlistItem(r.symbol, {
+                              targetAbove: e.target.value ? Number(e.target.value) : undefined,
+                            })
+                          }
+                          className="w-16 rounded-md bg-neutral-950 border border-neutral-800 px-1.5 py-1 text-xs text-neutral-300 placeholder:text-neutral-700"
+                        />
+                        <input
+                          type="number"
+                          step="any"
+                          key={`below-${r.symbol}-${r.targetBelow ?? ""}`}
+                          defaultValue={r.targetBelow ?? ""}
+                          placeholder="≤"
+                          title="Alert when price falls to or below this"
+                          onBlur={(e) =>
+                            updateWatchlistItem(r.symbol, {
+                              targetBelow: e.target.value ? Number(e.target.value) : undefined,
+                            })
+                          }
+                          className="w-16 rounded-md bg-neutral-950 border border-neutral-800 px-1.5 py-1 text-xs text-neutral-300 placeholder:text-neutral-700"
+                        />
+                      </div>
+                    </td>
                     <td className="px-4 sm:px-5 py-3 text-right">
                       <button
                         onClick={() => removeWatchlistItem(r.symbol)}
@@ -251,7 +356,8 @@ export default function WatchlistPage() {
                       </button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -260,7 +366,9 @@ export default function WatchlistPage() {
           <div className="px-4 sm:px-5 py-2.5 border-t border-neutral-900 text-[11px] text-neutral-600">
             Last updated {formatDateTime(updatedAt)} - Pressure auto-refreshes every minute and
             estimates buying vs. selling volume from today&apos;s 1-minute bars (an
-            uptick/downtick proxy, not real order-flow data).
+            uptick/downtick proxy, not real order-flow data). Alert (🎯) is a visual
+            flag only when the page is open - it doesn&apos;t send an email or push
+            notification.
           </div>
         )}
       </Card>

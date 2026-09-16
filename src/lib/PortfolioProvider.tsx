@@ -25,6 +25,7 @@ export function usePortfolio() {
     setSectors: store.setSectors,
     addWatchlistItem: store.addWatchlistItem,
     removeWatchlistItem: store.removeWatchlistItem,
+    updateWatchlistItem: store.updateWatchlistItem,
     setCurrency: store.setCurrency,
     addPortfolio: store.addPortfolio,
     renamePortfolio: store.renamePortfolio,

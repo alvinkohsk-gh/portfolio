@@ -217,6 +217,19 @@ export function removeWatchlistItem(symbol: string) {
   commit({ ...state, watchlist: state.watchlist.filter((w) => w.symbol !== symbol) });
 }
 
+/** Patches a watchlist item's tags/target-price fields in place (e.g. from
+ * an inline edit in the Watchlist table). No-op if the symbol isn't
+ * watched. */
+export function updateWatchlistItem(
+  symbol: string,
+  patch: Partial<Pick<WatchlistItem, "tags" | "targetAbove" | "targetBelow">>
+) {
+  commit({
+    ...state,
+    watchlist: state.watchlist.map((w) => (w.symbol === symbol ? { ...w, ...patch } : w)),
+  });
+}
+
 export function setCurrency(currency: string) {
   commit({ ...state, currency });
 }
