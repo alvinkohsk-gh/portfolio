@@ -38,6 +38,14 @@ export interface PriceInfo {
 export interface WatchlistItem {
   symbol: string;
   name?: string;
+  /** Free-form labels for grouping/filtering the watchlist (e.g. "core",
+   * "speculative"). */
+  tags?: string[];
+  /** Alert thresholds: the row is flagged in the UI once the live price
+   * reaches or crosses either bound. Purely visual - no email/push
+   * notifications are sent. */
+  targetAbove?: number;
+  targetBelow?: number;
 }
 
 /** One historical per-share cash dividend payment for a symbol, as fetched
