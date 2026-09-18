@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 interface ScreenerQuote {
   symbol?: string;
   shortName?: string;
+  currency?: string;
   regularMarketPrice?: number;
   regularMarketPreviousClose?: number;
   preMarketPrice?: number;
@@ -13,6 +14,7 @@ interface ScreenerQuote {
 
 export interface MarketMoverQuote {
   name?: string;
+  currency?: string;
   price?: number;
   previousClose?: number;
   preMarketPrice?: number;
@@ -51,6 +53,7 @@ export async function GET() {
       if (!q.symbol || typeof q.regularMarketPrice !== "number") continue;
       quotes[q.symbol] = {
         name: q.shortName,
+        currency: q.currency,
         price: q.regularMarketPrice,
         previousClose: q.regularMarketPreviousClose,
         preMarketPrice: typeof q.preMarketPrice === "number" ? q.preMarketPrice : undefined,

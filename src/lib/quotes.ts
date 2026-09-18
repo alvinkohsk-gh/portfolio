@@ -24,6 +24,7 @@ export async function fetchQuotes(
 
 export interface MarketMoverQuote {
   name?: string;
+  currency?: string;
   price?: number;
   previousClose?: number;
   preMarketPrice?: number;

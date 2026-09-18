@@ -2,13 +2,22 @@
 
 import { useEffect, useState } from "react";
 import { fetchMarketMovers, fetchQuotes, MarketMoverQuote } from "@/lib/quotes";
-import { formatDateTime, formatPercent, gainColorClass } from "@/lib/format";
+import { formatCurrency, formatDateTime, formatPercent, gainColorClass } from "@/lib/format";
 import { Card } from "./Card";
 
 interface Mover {
   symbol: string;
   name?: string;
   changePct: number;
+  price?: number;
+  currency?: string;
+}
+
+/** Which price to display alongside the % change - the session's own price
+ * (pre-market, regular, or after-hours), not necessarily q.price. */
+interface SessionAccessors {
+  changeFor: (q: MarketMoverQuote) => number | undefined;
+  priceFor: (q: MarketMoverQuote) => number | undefined;
 }
 
 const MAX_MOVERS = 20;
@@ -20,31 +29,36 @@ function pctChange(from: number | undefined, to: number | undefined): number | u
   return ((to - from) / from) * 100;
 }
 
-function ranked(quotes: Record<string, MarketMoverQuote>, changeFor: (q: MarketMoverQuote) => number | undefined): Mover[] {
+function ranked(quotes: Record<string, MarketMoverQuote>, { changeFor, priceFor }: SessionAccessors): Mover[] {
   return Object.entries(quotes)
     .map(([symbol, q]): Mover | null => {
       const changePct = changeFor(q);
-      return changePct != null ? { symbol, name: q.name, changePct } : null;
+      return changePct != null
+        ? { symbol, name: q.name, changePct, price: priceFor(q), currency: q.currency }
+        : null;
     })
     .filter((m): m is Mover => m !== null);
 }
 
-function topWinners(quotes: Record<string, MarketMoverQuote>, changeFor: (q: MarketMoverQuote) => number | undefined): Mover[] {
-  return ranked(quotes, changeFor)
+function topWinners(quotes: Record<string, MarketMoverQuote>, accessors: SessionAccessors): Mover[] {
+  return ranked(quotes, accessors)
     .filter((m) => m.changePct > 0)
     .sort((a, b) => b.changePct - a.changePct)
     .slice(0, MAX_MOVERS);
 }
 
-function topLosers(quotes: Record<string, MarketMoverQuote>, changeFor: (q: MarketMoverQuote) => number | undefined): Mover[] {
-  return ranked(quotes, changeFor)
+function topLosers(quotes: Record<string, MarketMoverQuote>, accessors: SessionAccessors): Mover[] {
+  return ranked(quotes, accessors)
     .filter((m) => m.changePct < 0)
     .sort((a, b) => a.changePct - b.changePct)
     .slice(0, MAX_MOVERS);
 }
 
 function toTrackedQuoteMap(
-  tracked: Record<string, { price: number; previousClose?: number; preMarketPrice?: number; postMarketPrice?: number }>,
+  tracked: Record<
+    string,
+    { price: number; previousClose?: number; preMarketPrice?: number; postMarketPrice?: number; currency?: string }
+  >,
   names: Record<string, string>
 ): Record<string, MarketMoverQuote> {
   return Object.fromEntries(
@@ -52,6 +66,7 @@ function toTrackedQuoteMap(
       symbol,
       {
         name: names[symbol],
+        currency: q.currency,
         price: q.price,
         previousClose: q.previousClose,
         preMarketPrice: q.preMarketPrice,
@@ -75,8 +90,13 @@ function MoverList({ title, movers }: { title: string; movers: Mover[] }) {
                 <span className="font-medium text-white">{m.symbol}</span>
                 {m.name && <span className="ml-1.5 text-xs text-neutral-500">{m.name}</span>}
               </div>
-              <span className={`shrink-0 tabular-nums text-xs font-medium ${gainColorClass(m.changePct)}`}>
-                {formatPercent(m.changePct)}
+              <span className="shrink-0 flex items-baseline gap-1.5 tabular-nums text-xs">
+                {m.price != null && (
+                  <span className="text-neutral-400">{formatCurrency(m.price, m.currency ?? "USD")}</span>
+                )}
+                <span className={`font-medium ${gainColorClass(m.changePct)}`}>
+                  {formatPercent(m.changePct)}
+                </span>
               </span>
             </li>
           ))}
@@ -168,9 +188,18 @@ export function MoversPanel({
   // e.g. a holding that also happens to be a top mover today.
   const merged: Record<string, MarketMoverQuote> = { ...marketQuotes, ...trackedQuotes };
 
-  const preMarketChange = (q: MarketMoverQuote) => pctChange(q.previousClose, q.preMarketPrice);
-  const regularChange = (q: MarketMoverQuote) => pctChange(q.previousClose, q.price);
-  const afterHoursChange = (q: MarketMoverQuote) => pctChange(q.price, q.postMarketPrice);
+  const preMarket: SessionAccessors = {
+    changeFor: (q) => pctChange(q.previousClose, q.preMarketPrice),
+    priceFor: (q) => q.preMarketPrice,
+  };
+  const regular: SessionAccessors = {
+    changeFor: (q) => pctChange(q.previousClose, q.price),
+    priceFor: (q) => q.price,
+  };
+  const afterHours: SessionAccessors = {
+    changeFor: (q) => pctChange(q.price, q.postMarketPrice),
+    priceFor: (q) => q.postMarketPrice,
+  };
 
   return (
     <Card>
@@ -192,18 +221,18 @@ export function MoversPanel({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
         <SessionColumn
           title="Pre-Market"
-          winners={topWinners(merged, preMarketChange)}
-          losers={topLosers(merged, preMarketChange)}
+          winners={topWinners(merged, preMarket)}
+          losers={topLosers(merged, preMarket)}
         />
         <SessionColumn
           title="Regular Hours"
-          winners={topWinners(merged, regularChange)}
-          losers={topLosers(merged, regularChange)}
+          winners={topWinners(merged, regular)}
+          losers={topLosers(merged, regular)}
         />
         <SessionColumn
           title="After-Hours"
-          winners={topWinners(merged, afterHoursChange)}
-          losers={topLosers(merged, afterHoursChange)}
+          winners={topWinners(merged, afterHours)}
+          losers={topLosers(merged, afterHours)}
         />
       </div>
       <p className="mt-3 text-[11px] text-neutral-600">
