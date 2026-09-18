@@ -13,6 +13,7 @@ const links = [
   { href: "/", label: "Dashboard" },
   { href: "/transactions", label: "Transactions" },
   { href: "/watchlist", label: "Watchlist" },
+  { href: "/realized", label: "Realized P&L" },
   { href: "/announcements", label: "Announcements" },
   { href: "/settings", label: "Settings" },
 ];
