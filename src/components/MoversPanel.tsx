@@ -20,17 +20,26 @@ function pctChange(from: number | undefined, to: number | undefined): number | u
   return ((to - from) / from) * 100;
 }
 
-function rankMovers(
-  quotes: Record<string, MarketMoverQuote>,
-  changeFor: (q: MarketMoverQuote) => number | undefined
-): Mover[] {
+function ranked(quotes: Record<string, MarketMoverQuote>, changeFor: (q: MarketMoverQuote) => number | undefined): Mover[] {
   return Object.entries(quotes)
     .map(([symbol, q]): Mover | null => {
       const changePct = changeFor(q);
       return changePct != null ? { symbol, name: q.name, changePct } : null;
     })
-    .filter((m): m is Mover => m !== null)
-    .sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct))
+    .filter((m): m is Mover => m !== null);
+}
+
+function topWinners(quotes: Record<string, MarketMoverQuote>, changeFor: (q: MarketMoverQuote) => number | undefined): Mover[] {
+  return ranked(quotes, changeFor)
+    .filter((m) => m.changePct > 0)
+    .sort((a, b) => b.changePct - a.changePct)
+    .slice(0, MAX_MOVERS);
+}
+
+function topLosers(quotes: Record<string, MarketMoverQuote>, changeFor: (q: MarketMoverQuote) => number | undefined): Mover[] {
+  return ranked(quotes, changeFor)
+    .filter((m) => m.changePct < 0)
+    .sort((a, b) => a.changePct - b.changePct)
     .slice(0, MAX_MOVERS);
 }
 
@@ -77,12 +86,32 @@ function MoverList({ title, movers }: { title: string; movers: Mover[] }) {
   );
 }
 
+function SessionColumn({
+  title,
+  winners,
+  losers,
+}: {
+  title: string;
+  winners: Mover[];
+  losers: Mover[];
+}) {
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="text-sm font-medium text-white">{title}</div>
+      <MoverList title="Winners" movers={winners} />
+      <MoverList title="Losers" movers={losers} />
+    </div>
+  );
+}
+
 /** Ranks a market-wide candidate pool (Yahoo's day gainers/losers/most-active
- * screens) plus whatever the user holds or watches by absolute price
- * movement in each trading session - pre-market, regular hours, and
- * after-hours - using Yahoo's pre/post market price fields. Since those
- * fields are only populated by Yahoo during/shortly after the relevant
- * session, a section legitimately shows "No data" outside its window. */
+ * screens) plus whatever the user holds or watches by price movement in
+ * each trading session - pre-market, regular hours, and after-hours - using
+ * Yahoo's pre/post market price fields. Winners and losers are ranked and
+ * displayed separately rather than merged into one absolute-value list.
+ * Since pre/post market fields are only populated by Yahoo during/shortly
+ * after the relevant session, a list legitimately shows "No data" outside
+ * its window. */
 export function MoversPanel({
   symbols,
   names,
@@ -139,9 +168,9 @@ export function MoversPanel({
   // e.g. a holding that also happens to be a top mover today.
   const merged: Record<string, MarketMoverQuote> = { ...marketQuotes, ...trackedQuotes };
 
-  const preMarket = rankMovers(merged, (q) => pctChange(q.previousClose, q.preMarketPrice));
-  const regular = rankMovers(merged, (q) => pctChange(q.previousClose, q.price));
-  const afterHours = rankMovers(merged, (q) => pctChange(q.price, q.postMarketPrice));
+  const preMarketChange = (q: MarketMoverQuote) => pctChange(q.previousClose, q.preMarketPrice);
+  const regularChange = (q: MarketMoverQuote) => pctChange(q.previousClose, q.price);
+  const afterHoursChange = (q: MarketMoverQuote) => pctChange(q.price, q.postMarketPrice);
 
   return (
     <Card>
@@ -160,15 +189,27 @@ export function MoversPanel({
           </button>
         </div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <MoverList title="Pre-Market" movers={preMarket} />
-        <MoverList title="Regular Hours" movers={regular} />
-        <MoverList title="After-Hours" movers={afterHours} />
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+        <SessionColumn
+          title="Pre-Market"
+          winners={topWinners(merged, preMarketChange)}
+          losers={topLosers(merged, preMarketChange)}
+        />
+        <SessionColumn
+          title="Regular Hours"
+          winners={topWinners(merged, regularChange)}
+          losers={topLosers(merged, regularChange)}
+        />
+        <SessionColumn
+          title="After-Hours"
+          winners={topWinners(merged, afterHoursChange)}
+          losers={topLosers(merged, afterHoursChange)}
+        />
       </div>
       <p className="mt-3 text-[11px] text-neutral-600">
-        Ranked by absolute % move across today&apos;s most active market-wide movers plus your
-        holdings and watchlist. Pre-market and after-hours data is only available from Yahoo
-        Finance during/shortly after that session.
+        Winners and losers ranked separately by % move across today&apos;s most active market-wide
+        movers plus your holdings and watchlist. Pre-market and after-hours data is only available
+        from Yahoo Finance during/shortly after that session.
       </p>
     </Card>
   );
