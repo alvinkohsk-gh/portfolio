@@ -11,6 +11,11 @@ interface Quote {
   name?: string;
   fiftyTwoWeekLow?: number;
   fiftyTwoWeekHigh?: number;
+  /** "PRE" | "REGULAR" | "POST" | "POSTPOST" | "CLOSED" - which session
+   * meta.regularMarketPrice was last updated for, as reported by Yahoo. */
+  marketState?: string;
+  preMarketPrice?: number;
+  postMarketPrice?: number;
 }
 
 // Uses Yahoo Finance's public chart endpoint. It requires no API key, but is
@@ -41,6 +46,9 @@ async function fetchQuote(symbol: string): Promise<Quote | null> {
     dayHigh: meta.regularMarketDayHigh,
     currency: meta.currency,
     name: meta.symbol,
+    marketState: meta.marketState,
+    preMarketPrice: typeof meta.preMarketPrice === "number" ? meta.preMarketPrice : undefined,
+    postMarketPrice: typeof meta.postMarketPrice === "number" ? meta.postMarketPrice : undefined,
   };
 }
 
