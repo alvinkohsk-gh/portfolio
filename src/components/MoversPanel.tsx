@@ -11,7 +11,7 @@ interface Mover {
   changePct: number;
 }
 
-const MAX_MOVERS = 5;
+const MAX_MOVERS = 20;
 
 /** Percent change from `from` to `to`, or undefined if either price is
  * missing - callers filter these out rather than showing a misleading 0%. */
