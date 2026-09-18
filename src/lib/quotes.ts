@@ -21,3 +21,25 @@ export async function fetchQuotes(
   }
   return res.json();
 }
+
+export interface MarketMoverQuote {
+  name?: string;
+  price?: number;
+  previousClose?: number;
+  preMarketPrice?: number;
+  postMarketPrice?: number;
+}
+
+/** A market-wide candidate pool (Yahoo's day gainers/losers/most-actives
+ * screens) for the movers panel, independent of anything the user holds or
+ * watches. */
+export async function fetchMarketMovers(): Promise<Record<string, MarketMoverQuote>> {
+  try {
+    const res = await fetch("/api/movers");
+    if (!res.ok) return {};
+    const data = await res.json();
+    return data.quotes ?? {};
+  } catch {
+    return {};
+  }
+}

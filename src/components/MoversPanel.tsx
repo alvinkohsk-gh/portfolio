@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchQuotes, QuoteResult } from "@/lib/quotes";
+import { fetchMarketMovers, fetchQuotes, MarketMoverQuote } from "@/lib/quotes";
 import { formatDateTime, formatPercent, gainColorClass } from "@/lib/format";
 import { Card } from "./Card";
 
@@ -21,20 +21,35 @@ function pctChange(from: number | undefined, to: number | undefined): number | u
 }
 
 function rankMovers(
-  symbols: string[],
-  names: Record<string, string>,
-  quotes: Record<string, QuoteResult>,
-  changeFor: (q: QuoteResult) => number | undefined
+  quotes: Record<string, MarketMoverQuote>,
+  changeFor: (q: MarketMoverQuote) => number | undefined
 ): Mover[] {
-  return symbols
-    .map((symbol): Mover | null => {
-      const q = quotes[symbol];
-      const changePct = q ? changeFor(q) : undefined;
-      return changePct != null ? { symbol, name: names[symbol], changePct } : null;
+  return Object.entries(quotes)
+    .map(([symbol, q]): Mover | null => {
+      const changePct = changeFor(q);
+      return changePct != null ? { symbol, name: q.name, changePct } : null;
     })
     .filter((m): m is Mover => m !== null)
     .sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct))
     .slice(0, MAX_MOVERS);
+}
+
+function toTrackedQuoteMap(
+  tracked: Record<string, { price: number; previousClose?: number; preMarketPrice?: number; postMarketPrice?: number }>,
+  names: Record<string, string>
+): Record<string, MarketMoverQuote> {
+  return Object.fromEntries(
+    Object.entries(tracked).map(([symbol, q]) => [
+      symbol,
+      {
+        name: names[symbol],
+        price: q.price,
+        previousClose: q.previousClose,
+        preMarketPrice: q.preMarketPrice,
+        postMarketPrice: q.postMarketPrice,
+      },
+    ])
+  );
 }
 
 function MoverList({ title, movers }: { title: string; movers: Mover[] }) {
@@ -62,7 +77,8 @@ function MoverList({ title, movers }: { title: string; movers: Mover[] }) {
   );
 }
 
-/** Ranks the tracked symbols (holdings + watchlist) by absolute price
+/** Ranks a market-wide candidate pool (Yahoo's day gainers/losers/most-active
+ * screens) plus whatever the user holds or watches by absolute price
  * movement in each trading session - pre-market, regular hours, and
  * after-hours - using Yahoo's pre/post market price fields. Since those
  * fields are only populated by Yahoo during/shortly after the relevant
@@ -74,19 +90,23 @@ export function MoversPanel({
   symbols: string[];
   names: Record<string, string>;
 }) {
-  const [quotes, setQuotes] = useState<Record<string, QuoteResult>>({});
+  const [marketQuotes, setMarketQuotes] = useState<Record<string, MarketMoverQuote>>({});
+  const [trackedQuotes, setTrackedQuotes] = useState<Record<string, MarketMoverQuote>>({});
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const symbolsKey = [...symbols].sort().join(",");
 
   async function refresh() {
-    if (symbols.length === 0) return;
     setLoading(true);
     try {
-      const { quotes } = await fetchQuotes(symbols);
-      if (Object.keys(quotes).length > 0) {
-        setQuotes(quotes);
+      const [market, tracked] = await Promise.all([
+        fetchMarketMovers(),
+        fetchQuotes(symbols).then((r) => r.quotes),
+      ]);
+      if (Object.keys(market).length > 0 || Object.keys(tracked).length > 0) {
+        setMarketQuotes(market);
+        setTrackedQuotes(toTrackedQuoteMap(tracked, names));
         setUpdatedAt(new Date().toISOString());
       }
     } finally {
@@ -95,29 +115,33 @@ export function MoversPanel({
   }
 
   useEffect(() => {
-    if (symbolsKey === "") return;
     let cancelled = false;
     (async () => {
-      const { quotes } = await fetchQuotes(symbolsKey.split(","));
-      if (!cancelled && Object.keys(quotes).length > 0) {
-        setQuotes(quotes);
+      const [market, tracked] = await Promise.all([
+        fetchMarketMovers(),
+        fetchQuotes(symbolsKey ? symbolsKey.split(",") : []).then((r) => r.quotes),
+      ]);
+      if (cancelled) return;
+      if (Object.keys(market).length > 0 || Object.keys(tracked).length > 0) {
+        setMarketQuotes(market);
+        setTrackedQuotes(toTrackedQuoteMap(tracked, names));
         setUpdatedAt(new Date().toISOString());
       }
     })();
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbolsKey]);
 
-  const preMarket = rankMovers(symbols, names, quotes, (q) =>
-    pctChange(q.previousClose, q.preMarketPrice)
-  );
-  const regular = rankMovers(symbols, names, quotes, (q) => pctChange(q.previousClose, q.price));
-  const afterHours = rankMovers(symbols, names, quotes, (q) =>
-    pctChange(q.price, q.postMarketPrice)
-  );
+  // Tracked quotes (from the reliable per-symbol chart endpoint) take
+  // precedence over the screener pool for any symbol appearing in both -
+  // e.g. a holding that also happens to be a top mover today.
+  const merged: Record<string, MarketMoverQuote> = { ...marketQuotes, ...trackedQuotes };
 
-  if (symbols.length === 0) return null;
+  const preMarket = rankMovers(merged, (q) => pctChange(q.previousClose, q.preMarketPrice));
+  const regular = rankMovers(merged, (q) => pctChange(q.previousClose, q.price));
+  const afterHours = rankMovers(merged, (q) => pctChange(q.price, q.postMarketPrice));
 
   return (
     <Card>
@@ -142,8 +166,9 @@ export function MoversPanel({
         <MoverList title="After-Hours" movers={afterHours} />
       </div>
       <p className="mt-3 text-[11px] text-neutral-600">
-        Ranked by absolute % move among your holdings and watchlist. Pre-market and after-hours
-        data is only available from Yahoo Finance during/shortly after that session.
+        Ranked by absolute % move across today&apos;s most active market-wide movers plus your
+        holdings and watchlist. Pre-market and after-hours data is only available from Yahoo
+        Finance during/shortly after that session.
       </p>
     </Card>
   );
