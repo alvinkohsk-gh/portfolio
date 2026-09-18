@@ -8,22 +8,92 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { Card } from "@/components/Card";
 import clsx from "clsx";
 
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+// e.date is always an ISO yyyy-mm-dd string, so these are cheap slices
+// rather than a Date parse (which would also need a timezone decision).
+const yearOf = (date: string) => date.slice(0, 4);
+const monthOf = (date: string) => date.slice(5, 7);
+const dayOf = (date: string) => date.slice(8, 10);
+
 export default function RealizedPage() {
   const { state } = usePortfolio();
   const [filterSymbol, setFilterSymbol] = useState("ALL");
+  const [filterYear, setFilterYear] = useState("ALL");
+  const [filterMonth, setFilterMonth] = useState("ALL");
+  const [filterDay, setFilterDay] = useState("ALL");
 
   const symbols = useMemo(() => allSymbols(state), [state]);
   const showPortfolioColumn = state.activePortfolioId === ALL_PORTFOLIOS;
   const portfolioName = (id: string) =>
     state.portfolios.find((p) => p.id === id)?.name ?? "—";
 
+  // Scoped to the active portfolio only, so the year/month/day option lists
+  // (and the symbol filter's date range) reflect what's actually browsable,
+  // independent of the symbol/date filters below.
+  const scopedEvents = useMemo(() => {
+    return computeRealizedEvents(state).filter(
+      (e) => state.activePortfolioId === ALL_PORTFOLIOS || e.portfolioId === state.activePortfolioId
+    );
+  }, [state]);
+
+  const years = useMemo(
+    () => [...new Set(scopedEvents.map((e) => yearOf(e.date)))].sort((a, b) => b.localeCompare(a)),
+    [scopedEvents]
+  );
+  const months = useMemo(
+    () =>
+      [
+        ...new Set(
+          scopedEvents.filter((e) => filterYear === "ALL" || yearOf(e.date) === filterYear).map((e) => monthOf(e.date))
+        ),
+      ].sort(),
+    [scopedEvents, filterYear]
+  );
+  const days = useMemo(
+    () =>
+      [
+        ...new Set(
+          scopedEvents
+            .filter((e) => filterYear === "ALL" || yearOf(e.date) === filterYear)
+            .filter((e) => filterMonth === "ALL" || monthOf(e.date) === filterMonth)
+            .map((e) => dayOf(e.date))
+        ),
+      ].sort(),
+    [scopedEvents, filterYear, filterMonth]
+  );
+
+  function handleYearChange(value: string) {
+    setFilterYear(value);
+    setFilterMonth("ALL");
+    setFilterDay("ALL");
+  }
+
+  function handleMonthChange(value: string) {
+    setFilterMonth(value);
+    setFilterDay("ALL");
+  }
+
   const events = useMemo(() => {
-    return computeRealizedEvents(state)
-      .filter(
-        (e) => state.activePortfolioId === ALL_PORTFOLIOS || e.portfolioId === state.activePortfolioId
-      )
-      .filter((e) => filterSymbol === "ALL" || e.symbol === filterSymbol);
-  }, [state, filterSymbol]);
+    return scopedEvents
+      .filter((e) => filterSymbol === "ALL" || e.symbol === filterSymbol)
+      .filter((e) => filterYear === "ALL" || yearOf(e.date) === filterYear)
+      .filter((e) => filterMonth === "ALL" || monthOf(e.date) === filterMonth)
+      .filter((e) => filterDay === "ALL" || dayOf(e.date) === filterDay);
+  }, [scopedEvents, filterSymbol, filterYear, filterMonth, filterDay]);
 
   const totalGain = useMemo(() => events.reduce((sum, e) => sum + e.gain, 0), [events]);
 
@@ -31,18 +101,58 @@ export default function RealizedPage() {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-white">Realized P&amp;L</h1>
-        <select
-          value={filterSymbol}
-          onChange={(e) => setFilterSymbol(e.target.value)}
-          className="rounded-md bg-neutral-900 border border-neutral-700 px-2.5 py-2 text-sm text-white"
-        >
-          <option value="ALL">All symbols</option>
-          {symbols.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={filterSymbol}
+            onChange={(e) => setFilterSymbol(e.target.value)}
+            className="rounded-md bg-neutral-900 border border-neutral-700 px-2.5 py-2 text-sm text-white"
+          >
+            <option value="ALL">All symbols</option>
+            {symbols.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+          <select
+            value={filterYear}
+            onChange={(e) => handleYearChange(e.target.value)}
+            className="rounded-md bg-neutral-900 border border-neutral-700 px-2.5 py-2 text-sm text-white"
+          >
+            <option value="ALL">All years</option>
+            {years.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
+          <select
+            value={filterMonth}
+            onChange={(e) => handleMonthChange(e.target.value)}
+            disabled={months.length === 0}
+            className="rounded-md bg-neutral-900 border border-neutral-700 px-2.5 py-2 text-sm text-white disabled:opacity-50"
+          >
+            <option value="ALL">All months</option>
+            {months.map((m) => (
+              <option key={m} value={m}>
+                {MONTH_NAMES[Number(m) - 1]}
+              </option>
+            ))}
+          </select>
+          <select
+            value={filterDay}
+            onChange={(e) => setFilterDay(e.target.value)}
+            disabled={days.length === 0}
+            className="rounded-md bg-neutral-900 border border-neutral-700 px-2.5 py-2 text-sm text-white disabled:opacity-50"
+          >
+            <option value="ALL">All days</option>
+            {days.map((d) => (
+              <option key={d} value={d}>
+                {Number(d)}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <Card className="p-4 sm:p-5">
