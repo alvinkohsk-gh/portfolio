@@ -18,7 +18,13 @@ const links = [
   { href: "/settings", label: "Settings" },
 ];
 
-export function NavBar() {
+export function NavBar({
+  username,
+  onSignOut,
+}: {
+  username?: string | null;
+  onSignOut?: () => void;
+}) {
   const pathname = usePathname();
   const { state, setLivePrices } = usePortfolio();
   const [refreshing, setRefreshing] = useState(false);
@@ -84,6 +90,17 @@ export function NavBar() {
           >
             {refreshing ? "Refreshing…" : "Refresh prices"}
           </button>
+          {onSignOut && (
+            <div className="flex items-center gap-2 pl-2 border-l border-neutral-800">
+              {username && <span className="hidden md:inline text-xs text-neutral-500">{username}</span>}
+              <button
+                onClick={onSignOut}
+                className="text-sm font-medium px-3 py-1.5 rounded-md text-neutral-400 hover:text-white hover:bg-neutral-900 transition-colors"
+              >
+                Sign out
+              </button>
+            </div>
+          )}
         </div>
       </div>
       <nav className="sm:hidden flex items-center gap-1 px-4 pb-2 overflow-x-auto">
