@@ -6,6 +6,9 @@ export interface QuoteResult {
   currency?: string;
   fiftyTwoWeekLow?: number;
   fiftyTwoWeekHigh?: number;
+  marketState?: string;
+  preMarketPrice?: number;
+  postMarketPrice?: number;
 }
 
 export async function fetchQuotes(

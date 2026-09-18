@@ -4,16 +4,19 @@ import { useEffect, useState } from "react";
 import { usePortfolio } from "@/lib/PortfolioProvider";
 import {
   activeCurrency,
+  allSymbols,
   computeHoldings,
   computePerformanceSeries,
   computeSummary,
   computeYieldMetrics,
   scopedToPortfolio,
+  symbolNames,
 } from "@/lib/portfolio";
 import { ALL_PORTFOLIOS } from "@/lib/types";
 import { fetchDividendHistory } from "@/lib/dividends";
 import { fetchSectors } from "@/lib/sectors";
 import { MarketIndices } from "@/components/MarketIndices";
+import { MoversPanel } from "@/components/MoversPanel";
 import { SummaryCards } from "@/components/SummaryCards";
 import { AllocationChart } from "@/components/AllocationChart";
 import { PerformanceChart } from "@/components/PerformanceChart";
@@ -34,6 +37,8 @@ export default function DashboardPage() {
   const yieldMetrics = computeYieldMetrics(scoped, holdings);
   const performance = computePerformanceSeries(scoped, holdings);
   const currency = activeCurrency(state);
+  const trackedSymbols = allSymbols(state);
+  const trackedNames = symbolNames(state);
 
   const activeName =
     state.activePortfolioId === ALL_PORTFOLIOS
@@ -90,6 +95,7 @@ export default function DashboardPage() {
     <div className="flex flex-col gap-5">
       <h1 className="text-xl font-semibold text-white">{activeName}</h1>
       <MarketIndices />
+      <MoversPanel symbols={trackedSymbols} names={trackedNames} />
       <SummaryCards summary={summary} currency={currency} />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <PerformanceChart data={performance} currency={currency} />
