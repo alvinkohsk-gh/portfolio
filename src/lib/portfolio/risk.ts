@@ -16,7 +16,17 @@ export interface RiskMetrics {
   coveredCount: number;
   /** Open long holdings excluded from both metrics for lacking bounds. */
   uncoveredCount: number;
+  /** The single largest open long holding by portfolio weight - a
+   * concentration risk distinct from sector concentration (already flagged
+   * elsewhere by SectorConcentration): even a well-diversified-by-sector
+   * portfolio can still be dominated by one stock. Undefined with no open
+   * holdings. */
+  largestPosition: { symbol: string; weightPct: number } | undefined;
 }
+
+/** Above this weight in a single holding, flag it as a concentration risk -
+ * same threshold SectorConcentration uses for a single sector. */
+export const POSITION_CONCENTRATION_THRESHOLD = 25;
 
 /** Portfolio-level risk proxies derived from each holding's already-fetched
  * 52-week high/low (Holding.fiftyTwoWeekLow/High) - no historical daily
@@ -28,12 +38,19 @@ export function computeRiskMetrics(holdings: Holding[]): RiskMetrics {
   const covered = open.filter((h) => h.fiftyTwoWeekLow != null && h.fiftyTwoWeekHigh != null);
   const totalWeight = covered.reduce((sum, h) => sum + h.weight, 0);
 
+  const largest = open.reduce<Holding | undefined>(
+    (max, h) => (max == null || h.weight > max.weight ? h : max),
+    undefined
+  );
+  const largestPosition = largest ? { symbol: largest.symbol, weightPct: largest.weight } : undefined;
+
   if (covered.length === 0 || totalWeight === 0) {
     return {
       distanceFromHighPct: undefined,
       rangeWidthPct: undefined,
       coveredCount: covered.length,
       uncoveredCount: open.length - covered.length,
+      largestPosition,
     };
   }
 
@@ -55,5 +72,6 @@ export function computeRiskMetrics(holdings: Holding[]): RiskMetrics {
     rangeWidthPct: rangeSum,
     coveredCount: covered.length,
     uncoveredCount: open.length - covered.length,
+    largestPosition,
   };
 }
