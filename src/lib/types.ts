@@ -71,6 +71,16 @@ export interface PortfolioState {
   /** Fetched sector cache per symbol (e.g. "Technology"), used to group the
    * allocation chart by sector instead of by individual holding. */
   sectors: Record<string, string>;
+  /** Stop-loss/take-profit exit plan per symbol, keyed independent of
+   * portfolio (like watchlist targets) - flags the holding in the Positions
+   * table once the live price crosses either bound. Purely visual, same as
+   * the watchlist's price alerts. */
+  positionTargets: Record<string, PositionTarget>;
+}
+
+export interface PositionTarget {
+  stopLoss?: number;
+  takeProfit?: number;
 }
 
 export interface Holding {

@@ -3,6 +3,7 @@ import {
   DividendEvent,
   Portfolio,
   PortfolioState,
+  PositionTarget,
   PriceInfo,
   Transaction,
   WatchlistItem,
@@ -25,6 +26,7 @@ const emptyState: PortfolioState = {
   activePortfolioId: ALL_PORTFOLIOS,
   dividendHistory: {},
   sectors: {},
+  positionTargets: {},
 };
 
 let state: PortfolioState = emptyState;
@@ -51,6 +53,7 @@ export function migrate(parsed: PortfolioState): PortfolioState {
     ),
     dividendHistory: parsed.dividendHistory ?? {},
     sectors: parsed.sectors ?? {},
+    positionTargets: parsed.positionTargets ?? {},
   };
 }
 
@@ -208,6 +211,20 @@ export function setSectors(sectors: Record<string, string>) {
   });
 }
 
+/** Patches a symbol's stop-loss/take-profit exit plan, dropping the entry
+ * entirely once both fields are cleared so an unused symbol doesn't linger
+ * in storage forever. */
+export function setPositionTarget(symbol: string, patch: Partial<PositionTarget>) {
+  const next = { ...state.positionTargets[symbol], ...patch };
+  const positionTargets = { ...state.positionTargets };
+  if (next.stopLoss == null && next.takeProfit == null) {
+    delete positionTargets[symbol];
+  } else {
+    positionTargets[symbol] = next;
+  }
+  commit({ ...state, positionTargets });
+}
+
 export function addWatchlistItem(item: WatchlistItem) {
   if (state.watchlist.some((w) => w.symbol === item.symbol)) return;
   commit({ ...state, watchlist: [...state.watchlist, item] });
@@ -288,5 +305,6 @@ export function clearAll() {
     activePortfolioId: ALL_PORTFOLIOS,
     dividendHistory: {},
     sectors: {},
+    positionTargets: {},
   });
 }

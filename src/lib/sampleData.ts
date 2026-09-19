@@ -320,4 +320,5 @@ export const sampleState: PortfolioState = {
   ],
   dividendHistory: {},
   sectors: {},
+  positionTargets: {},
 };
