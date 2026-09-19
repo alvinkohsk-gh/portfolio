@@ -87,7 +87,14 @@ function MoverList({ title, movers }: { title: string; movers: Mover[] }) {
           {movers.map((m) => (
             <li key={m.symbol} className="flex items-center justify-between gap-2 text-sm">
               <div className="min-w-0">
-                <span className="font-medium text-white">{m.symbol}</span>
+                <a
+                  href={`https://finance.yahoo.com/quote/${encodeURIComponent(m.symbol)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-white hover:text-emerald-400 hover:underline"
+                >
+                  {m.symbol}
+                </a>
                 {m.name && <span className="ml-1.5 text-xs text-neutral-500">{m.name}</span>}
               </div>
               <span className="shrink-0 flex items-baseline gap-1.5 tabular-nums text-xs">
