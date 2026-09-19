@@ -2,11 +2,19 @@
 
 import { useMemo, useState } from "react";
 import { usePortfolio } from "@/lib/PortfolioProvider";
-import { allSymbols, currencyForPortfolio } from "@/lib/portfolio";
+import {
+  activeCurrency,
+  allSymbols,
+  computeHoldings,
+  computeSummary,
+  currencyForPortfolio,
+  scopedToPortfolio,
+} from "@/lib/portfolio";
 import { ALL_PORTFOLIOS, Transaction } from "@/lib/types";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Card } from "@/components/Card";
 import { TransactionModal } from "@/components/TransactionModal";
+import { PositionSizeCalculator } from "@/components/PositionSizeCalculator";
 import clsx from "clsx";
 
 const typeStyles: Record<Transaction["type"], string> = {
@@ -18,10 +26,16 @@ const typeStyles: Record<Transaction["type"], string> = {
 export default function TransactionsPage() {
   const { state, addTransaction, updateTransaction, deleteTransaction } = usePortfolio();
   const [modalOpen, setModalOpen] = useState(false);
+  const [calculatorOpen, setCalculatorOpen] = useState(false);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [filterSymbol, setFilterSymbol] = useState<string>("ALL");
 
   const symbols = useMemo(() => allSymbols(state), [state]);
+  const accountValue = useMemo(() => {
+    const scoped = scopedToPortfolio(state, state.activePortfolioId);
+    return computeSummary(computeHoldings(scoped)).totalValue;
+  }, [state]);
+  const currency = activeCurrency(state);
   const showPortfolioColumn = state.activePortfolioId === ALL_PORTFOLIOS;
   const portfolioName = (id: string) =>
     state.portfolios.find((p) => p.id === id)?.name ?? "—";
@@ -76,6 +90,12 @@ export default function TransactionsPage() {
               </option>
             ))}
           </select>
+          <button
+            onClick={() => setCalculatorOpen(true)}
+            className="px-3 py-2 rounded-md text-sm font-medium text-neutral-300 border border-neutral-700 hover:bg-neutral-800"
+          >
+            Position size calculator
+          </button>
           <button
             onClick={openAdd}
             className="px-3 py-2 rounded-md text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white"
@@ -185,6 +205,13 @@ export default function TransactionsPage() {
         knownSymbols={symbols}
         portfolios={state.portfolios}
         defaultPortfolioId={defaultPortfolioId}
+      />
+
+      <PositionSizeCalculator
+        open={calculatorOpen}
+        onClose={() => setCalculatorOpen(false)}
+        defaultAccountValue={accountValue}
+        currency={currency}
       />
     </div>
   );
