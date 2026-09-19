@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Holding } from "@/lib/types";
+import { usePortfolio } from "@/lib/PortfolioProvider";
+import { Holding, PositionTarget } from "@/lib/types";
 import { YieldMetrics } from "@/lib/portfolio";
 import {
   formatCurrency,
@@ -13,6 +14,17 @@ import {
   gainColorClass,
 } from "@/lib/format";
 import { Card } from "./Card";
+
+/** "stop" when the price has fallen to/through the stop-loss, "target" when
+ * it's risen to/through the take-profit - never both, stop takes priority
+ * since protecting against a loss matters more than noting a win. Purely
+ * visual, same convention as the watchlist's price alerts. */
+function targetHit(price: number, target?: PositionTarget): "stop" | "target" | null {
+  if (!target) return null;
+  if (target.stopLoss != null && price <= target.stopLoss) return "stop";
+  if (target.takeProfit != null && price >= target.takeProfit) return "target";
+  return null;
+}
 
 /** Dividends received on a holding as a percentage of its cost basis -
  * "Div%" in the positions table. Not on `Holding` itself since it's a
@@ -93,6 +105,7 @@ export function HoldingsTable({
   currency: string;
   yieldMetrics: YieldMetrics;
 }) {
+  const { state, setPositionTarget } = usePortfolio();
   const [view, setView] = useState<"open" | "closed">("open");
   const [filter, setFilter] = useState("");
   const [openSort, setOpenSort] = useState<{ key: string; dir: 1 | -1 }>({
@@ -264,23 +277,31 @@ export function HoldingsTable({
                       {openSort.key === col.key ? (openSort.dir === 1 ? " ▲" : " ▼") : ""}
                     </th>
                   ))}
+                  <th className="px-4 sm:px-5 py-2.5 font-medium text-right whitespace-nowrap">
+                    Stop / Target
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {openRows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={OPEN_COLUMNS.length + 1}
+                      colSpan={OPEN_COLUMNS.length + 2}
                       className="px-4 sm:px-5 py-8 text-center text-sm text-neutral-500"
                     >
                       No holdings match &quot;{filter}&quot;.
                     </td>
                   </tr>
                 ) : (
-                  openRows.map((h) => (
+                  openRows.map((h) => {
+                    const target = state.positionTargets[h.symbol];
+                    const hit = targetHit(h.currentPrice, target);
+                    return (
                     <tr
                       key={h.symbol}
-                      className="border-b border-neutral-900 last:border-0 hover:bg-neutral-900/40"
+                      className={`border-b border-neutral-900 last:border-0 hover:bg-neutral-900/40 ${
+                        hit ? "bg-amber-500/5" : ""
+                      }`}
                     >
                       <td className="px-4 sm:px-5 py-3">
                         <div className="font-medium text-white flex items-center gap-1.5">
@@ -291,6 +312,18 @@ export function HoldingsTable({
                               className="text-amber-400 cursor-help"
                             >
                               ⚠
+                            </span>
+                          )}
+                          {hit && (
+                            <span
+                              title={
+                                hit === "stop"
+                                  ? "Price has hit your stop-loss"
+                                  : "Price has hit your take-profit target"
+                              }
+                              className="cursor-help"
+                            >
+                              🎯
                             </span>
                           )}
                         </div>
@@ -357,8 +390,41 @@ export function HoldingsTable({
                       <td className="px-4 sm:px-5 py-3 text-right tabular-nums text-neutral-300">
                         <FiftyTwoWeekBar h={h} />
                       </td>
+                      <td className="px-4 sm:px-5 py-3">
+                        <div className="flex items-center justify-end gap-1">
+                          <input
+                            key={`stop-${h.symbol}-${target?.stopLoss ?? ""}`}
+                            type="number"
+                            step="any"
+                            defaultValue={target?.stopLoss ?? ""}
+                            placeholder="Stop"
+                            title="Stop-loss price"
+                            onBlur={(e) =>
+                              setPositionTarget(h.symbol, {
+                                stopLoss: e.target.value === "" ? undefined : Number(e.target.value),
+                              })
+                            }
+                            className="w-20 rounded-md bg-neutral-950 border border-neutral-700 px-1.5 py-1 text-xs text-right text-white placeholder:text-neutral-600"
+                          />
+                          <input
+                            key={`target-${h.symbol}-${target?.takeProfit ?? ""}`}
+                            type="number"
+                            step="any"
+                            defaultValue={target?.takeProfit ?? ""}
+                            placeholder="Target"
+                            title="Take-profit price"
+                            onBlur={(e) =>
+                              setPositionTarget(h.symbol, {
+                                takeProfit: e.target.value === "" ? undefined : Number(e.target.value),
+                              })
+                            }
+                            className="w-20 rounded-md bg-neutral-950 border border-neutral-700 px-1.5 py-1 text-xs text-right text-white placeholder:text-neutral-600"
+                          />
+                        </div>
+                      </td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -438,14 +504,21 @@ export function HoldingsTable({
         </div>
       )}
 
-      {view === "open" && open.some((h) => h.priceUpdatedAt) && (
+      {view === "open" && open.length > 0 && (
         <div className="px-4 sm:px-5 py-2.5 border-t border-neutral-900 text-[11px] text-neutral-600">
-          Prices last updated{" "}
-          {formatDateTime(
-            open
-              .filter((h) => h.priceUpdatedAt)
-              .sort((a, b) => (b.priceUpdatedAt! > a.priceUpdatedAt! ? 1 : -1))[0].priceUpdatedAt!
+          {open.some((h) => h.priceUpdatedAt) && (
+            <>
+              Prices last updated{" "}
+              {formatDateTime(
+                open
+                  .filter((h) => h.priceUpdatedAt)
+                  .sort((a, b) => (b.priceUpdatedAt! > a.priceUpdatedAt! ? 1 : -1))[0].priceUpdatedAt!
+              )}
+              {". "}
+            </>
           )}
+          Stop/Target (🎯) is a visual flag only when this page is open - it doesn&apos;t place or
+          execute any order.
         </div>
       )}
     </Card>
