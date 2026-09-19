@@ -7,6 +7,7 @@ import {
   allSymbols,
   computeHoldings,
   computePerformanceSeries,
+  computeRiskMetrics,
   computeSummary,
   computeYieldMetrics,
   scopedToPortfolio,
@@ -24,6 +25,7 @@ import { HoldingsTable } from "@/components/HoldingsTable";
 import { DividendsTable } from "@/components/DividendsTable";
 import { DividendCalendar } from "@/components/DividendCalendar";
 import { SectorConcentration } from "@/components/SectorConcentration";
+import { RiskCard } from "@/components/RiskCard";
 
 export default function DashboardPage() {
   const { state, setDividendHistory, setSectors } = usePortfolio();
@@ -36,6 +38,7 @@ export default function DashboardPage() {
   const summary = computeSummary(holdings);
   const yieldMetrics = computeYieldMetrics(scoped, holdings);
   const performance = computePerformanceSeries(scoped, holdings);
+  const risk = computeRiskMetrics(holdings);
   const currency = activeCurrency(state);
   const trackedSymbols = allSymbols(state);
   const trackedNames = symbolNames(state);
@@ -97,6 +100,7 @@ export default function DashboardPage() {
       <MarketIndices />
       <MoversPanel symbols={trackedSymbols} names={trackedNames} />
       <SummaryCards summary={summary} currency={currency} />
+      <RiskCard risk={risk} />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <PerformanceChart data={performance} currency={currency} />
         <AllocationChart holdings={holdings} currency={currency} sectors={state.sectors} />
