@@ -120,3 +120,43 @@ export function computeRealizedEvents(state: PortfolioState): RealizedEvent[] {
 
   return events.sort((a, b) => b.date.localeCompare(a.date));
 }
+
+export interface RealizedStats {
+  winCount: number;
+  lossCount: number;
+  breakEvenCount: number;
+  /** Wins / (wins + losses) as a 0-100 percentage - breakeven closes are
+   * excluded from both sides, matching the usual trading convention. */
+  winRatePct: number | undefined;
+  avgWin: number | undefined;
+  avgLoss: number | undefined;
+  biggestWin: number | undefined;
+  biggestLoss: number | undefined;
+  /** Gross wins / |gross losses|. Undefined with no losses (rather than
+   * showing a misleading Infinity). */
+  profitFactor: number | undefined;
+}
+
+/** Trade-level win/loss stats over a set of realized events - independent of
+ * computeSummary's totalRealizedGain, which only tracks the dollar total. */
+export function computeRealizedStats(events: RealizedEvent[]): RealizedStats {
+  const wins = events.filter((e) => e.gain > 0);
+  const losses = events.filter((e) => e.gain < 0);
+  const breakEvenCount = events.length - wins.length - losses.length;
+
+  const grossWin = wins.reduce((sum, e) => sum + e.gain, 0);
+  const grossLoss = losses.reduce((sum, e) => sum + e.gain, 0);
+
+  return {
+    winCount: wins.length,
+    lossCount: losses.length,
+    breakEvenCount,
+    winRatePct:
+      wins.length + losses.length > 0 ? (wins.length / (wins.length + losses.length)) * 100 : undefined,
+    avgWin: wins.length > 0 ? grossWin / wins.length : undefined,
+    avgLoss: losses.length > 0 ? grossLoss / losses.length : undefined,
+    biggestWin: wins.length > 0 ? Math.max(...wins.map((e) => e.gain)) : undefined,
+    biggestLoss: losses.length > 0 ? Math.min(...losses.map((e) => e.gain)) : undefined,
+    profitFactor: grossLoss < 0 ? grossWin / Math.abs(grossLoss) : undefined,
+  };
+}
