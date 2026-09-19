@@ -2,9 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { usePortfolio } from "@/lib/PortfolioProvider";
-import { allSymbols, computeRealizedEvents, currencyForPortfolio } from "@/lib/portfolio";
+import { allSymbols, computeRealizedEvents, computeRealizedStats, currencyForPortfolio } from "@/lib/portfolio";
 import { ALL_PORTFOLIOS } from "@/lib/types";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, formatPercent, gainColorClass } from "@/lib/format";
 import { Card } from "@/components/Card";
 import clsx from "clsx";
 
@@ -96,6 +96,7 @@ export default function RealizedPage() {
   }, [scopedEvents, filterSymbol, filterYear, filterMonth, filterDay]);
 
   const totalGain = useMemo(() => events.reduce((sum, e) => sum + e.gain, 0), [events]);
+  const stats = useMemo(() => computeRealizedStats(events), [events]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -169,6 +170,54 @@ export default function RealizedPage() {
           Across {events.length} closed lot{events.length === 1 ? "" : "s"}
         </div>
       </Card>
+
+      {events.length > 0 && (
+        <Card className="p-4 sm:p-5">
+          <div className="text-xs text-neutral-500 mb-3">Trade stats</div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div>
+              <div className="text-xs text-neutral-500">Win rate</div>
+              <div className="text-lg font-semibold tabular-nums text-white">
+                {stats.winRatePct != null ? formatPercent(stats.winRatePct).replace("+", "") : "—"}
+              </div>
+              <div className="text-xs text-neutral-500">
+                {stats.winCount}W / {stats.lossCount}L
+                {stats.breakEvenCount > 0 ? ` / ${stats.breakEvenCount} flat` : ""}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-neutral-500">Profit factor</div>
+              <div className="text-lg font-semibold tabular-nums text-white">
+                {stats.profitFactor != null ? stats.profitFactor.toFixed(2) : "—"}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-neutral-500">Avg win / avg loss</div>
+              <div className="text-lg font-semibold tabular-nums">
+                <span className="text-emerald-400">
+                  {stats.avgWin != null ? formatCurrency(stats.avgWin, state.currency) : "—"}
+                </span>
+                <span className="text-neutral-600"> / </span>
+                <span className="text-rose-400">
+                  {stats.avgLoss != null ? formatCurrency(stats.avgLoss, state.currency) : "—"}
+                </span>
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-neutral-500">Biggest win / loss</div>
+              <div className="text-lg font-semibold tabular-nums">
+                <span className={gainColorClass(stats.biggestWin ?? 0)}>
+                  {stats.biggestWin != null ? formatCurrency(stats.biggestWin, state.currency) : "—"}
+                </span>
+                <span className="text-neutral-600"> / </span>
+                <span className={gainColorClass(stats.biggestLoss ?? 0)}>
+                  {stats.biggestLoss != null ? formatCurrency(stats.biggestLoss, state.currency) : "—"}
+                </span>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
 
       <Card className="p-0 overflow-hidden">
         {events.length === 0 ? (
