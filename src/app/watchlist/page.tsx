@@ -13,6 +13,7 @@ import {
 } from "@/lib/format";
 import { Card } from "@/components/Card";
 import { StockSearch } from "@/components/StockSearch";
+import { StockTwitsPanel } from "@/components/StockTwitsPanel";
 
 interface WatchlistRow {
   symbol: string;
@@ -159,6 +160,11 @@ export default function WatchlistPage() {
     const bv = col ? col.value(b) : 0;
     return sort.dir * (av - bv);
   });
+
+  const watchlistSymbols = state.watchlist.map((w) => w.symbol);
+  const watchlistNames = Object.fromEntries(
+    state.watchlist.filter((w) => w.name).map((w) => [w.symbol, w.name!])
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -372,6 +378,8 @@ export default function WatchlistPage() {
           </div>
         )}
       </Card>
+
+      <StockTwitsPanel symbols={watchlistSymbols} names={watchlistNames} />
     </div>
   );
 }
