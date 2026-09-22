@@ -1,21 +1,11 @@
-import type { Announcement, SourceDebug } from "@/app/api/announcements/route";
+import type { Announcement, AnnouncementsDebug, SourceDebug } from "@/lib/server/newsSources";
 
 export type { Announcement, SourceDebug };
 
 export interface AnnouncementsResponse {
   announcements: Record<string, Announcement[]>;
   errors: string[];
-  debug: Record<
-    string,
-    {
-      nasdaq?: SourceDebug;
-      secEdgar?: SourceDebug;
-      splits?: SourceDebug;
-      yahooNews?: SourceDebug;
-      sgxApi?: SourceDebug;
-      googleNews?: SourceDebug;
-    }
-  > & { sgx?: SourceDebug };
+  debug: AnnouncementsDebug;
 }
 
 export async function fetchAnnouncements(
