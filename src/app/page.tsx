@@ -26,6 +26,7 @@ import { DividendsTable } from "@/components/DividendsTable";
 import { DividendCalendar } from "@/components/DividendCalendar";
 import { SectorConcentration } from "@/components/SectorConcentration";
 import { RiskCard } from "@/components/RiskCard";
+import { EarningsCalendar } from "@/components/EarningsCalendar";
 
 export default function DashboardPage() {
   const { state, setDividendHistory, setSectors } = usePortfolio();
@@ -42,6 +43,11 @@ export default function DashboardPage() {
   const currency = activeCurrency(state);
   const trackedSymbols = allSymbols(state);
   const trackedNames = symbolNames(state);
+  // Open holdings + watchlist only - a closed position's next earnings
+  // date isn't actionable, so it's left out of the earnings calendar.
+  const earningsSymbols = [
+    ...new Set([...holdings.filter((h) => h.quantity > 0).map((h) => h.symbol), ...state.watchlist.map((w) => w.symbol)]),
+  ];
 
   const activeName =
     state.activePortfolioId === ALL_PORTFOLIOS
@@ -105,13 +111,14 @@ export default function DashboardPage() {
         <PerformanceChart data={performance} currency={currency} />
         <AllocationChart holdings={holdings} currency={currency} sectors={state.sectors} />
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <SectorConcentration holdings={holdings} sectors={state.sectors} />
         <DividendCalendar
           holdings={holdings}
           dividendHistory={state.dividendHistory}
           currency={currency}
         />
+        <EarningsCalendar symbols={earningsSymbols} names={trackedNames} />
       </div>
       <HoldingsTable holdings={holdings} currency={currency} yieldMetrics={yieldMetrics} />
       <DividendsTable
