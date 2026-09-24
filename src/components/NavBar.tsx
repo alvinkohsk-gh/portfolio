@@ -16,6 +16,7 @@ const links = [
   { href: "/stocktwits", label: "StockTwits" },
   { href: "/realized", label: "Realized P&L" },
   { href: "/announcements", label: "Announcements" },
+  { href: "/watchlist-wire", label: "Watchlist Wire" },
   { href: "/settings", label: "Settings" },
 ];
 
