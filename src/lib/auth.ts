@@ -73,6 +73,24 @@ export async function fetchRemoteState(): Promise<PortfolioState | null> {
   return (data?.state as PortfolioState) ?? null;
 }
 
+export async function fetchNotifyEmail(): Promise<string | null> {
+  const { data, error } = await supabase.from("profiles").select("notify_email").maybeSingle();
+  if (error) throw error;
+  return (data?.notify_email as string | null) ?? null;
+}
+
+export async function setNotifyEmail(email: string | null) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+  const { error } = await supabase
+    .from("profiles")
+    .update({ notify_email: email })
+    .eq("id", user.id);
+  if (error) throw error;
+}
+
 export async function pushRemoteState(state: PortfolioState) {
   const {
     data: { user },

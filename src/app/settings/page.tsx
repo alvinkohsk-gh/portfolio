@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePortfolio } from "@/lib/PortfolioProvider";
 import { allSymbols, computeHoldings } from "@/lib/portfolio";
 import { formatCurrency } from "@/lib/format";
@@ -8,6 +8,7 @@ import { Card, CardTitle } from "@/components/Card";
 import { PortfolioState } from "@/lib/types";
 import { migrate } from "@/lib/store";
 import { ImportSummary, parseIBTransactionsFromCSV, parseIBTransactionsFromExcel } from "@/lib/ibImport";
+import { fetchNotifyEmail, setNotifyEmail } from "@/lib/auth";
 
 const EXCEL_EXTENSION = /\.xlsx?$/i;
 
@@ -276,6 +277,8 @@ export default function SettingsPage() {
         {ibImportWarning && <p className="mt-2 text-xs text-amber-400">{ibImportWarning}</p>}
       </Card>
 
+      <EmailDigestCard />
+
       <Card>
         <CardTitle>Backup &amp; restore</CardTitle>
         <div className="flex flex-wrap gap-2">
@@ -330,6 +333,78 @@ export default function SettingsPage() {
         </div>
       </Card>
     </div>
+  );
+}
+
+function EmailDigestCard() {
+  const [email, setEmail] = useState("");
+  const [saved, setSaved] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const current = await fetchNotifyEmail();
+        if (!cancelled) {
+          setEmail(current ?? "");
+          setSaved(current);
+        }
+      } catch {
+        if (!cancelled) setError("Couldn't load your current digest setting.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    try {
+      const trimmed = email.trim();
+      await setNotifyEmail(trimmed.length > 0 ? trimmed : null);
+      setSaved(trimmed.length > 0 ? trimmed : null);
+    } catch {
+      setError("Couldn't save your digest email. Try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardTitle>Email digest</CardTitle>
+      <p className="text-xs text-neutral-500 mb-3">
+        Get a twice-daily email (~8am and ~6pm SGT) summarizing new headlines for your watchlist -
+        the same scan as the Announcements page, but delivered automatically and limited to items
+        you haven&apos;t already seen. Leave blank to turn it off.
+      </p>
+      <div className="flex items-center gap-2">
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          disabled={loading}
+          placeholder="you@example.com"
+          className="w-64 rounded-md bg-neutral-950 border border-neutral-700 px-2.5 py-2 text-sm text-white disabled:opacity-50"
+        />
+        <button
+          onClick={handleSave}
+          disabled={loading || saving || email.trim() === (saved ?? "")}
+          className="px-3 py-2 rounded-md text-sm font-medium bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+      </div>
+      {error && <p className="mt-2 text-xs text-rose-400">{error}</p>}
+      {!error && saved && <p className="mt-2 text-xs text-emerald-400">Digest enabled for {saved}.</p>}
+    </Card>
   );
 }
 
