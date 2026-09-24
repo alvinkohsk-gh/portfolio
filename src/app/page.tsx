@@ -27,6 +27,7 @@ import { DividendCalendar } from "@/components/DividendCalendar";
 import { SectorConcentration } from "@/components/SectorConcentration";
 import { RiskCard } from "@/components/RiskCard";
 import { EarningsCalendar } from "@/components/EarningsCalendar";
+import { AnalystRatingsCard } from "@/components/AnalystRatingsCard";
 
 export default function DashboardPage() {
   const { state, setDividendHistory, setSectors } = usePortfolio();
@@ -111,7 +112,7 @@ export default function DashboardPage() {
         <PerformanceChart data={performance} currency={currency} />
         <AllocationChart holdings={holdings} currency={currency} sectors={state.sectors} />
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-5">
         <SectorConcentration holdings={holdings} sectors={state.sectors} />
         <DividendCalendar
           holdings={holdings}
@@ -119,6 +120,7 @@ export default function DashboardPage() {
           currency={currency}
         />
         <EarningsCalendar symbols={earningsSymbols} names={trackedNames} />
+        <AnalystRatingsCard symbols={earningsSymbols} names={trackedNames} />
       </div>
       <HoldingsTable holdings={holdings} currency={currency} yieldMetrics={yieldMetrics} />
       <DividendsTable
