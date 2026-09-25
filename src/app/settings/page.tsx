@@ -8,7 +8,7 @@ import { Card, CardTitle } from "@/components/Card";
 import { PortfolioState } from "@/lib/types";
 import { migrate } from "@/lib/store";
 import { ImportSummary, parseIBTransactionsFromCSV, parseIBTransactionsFromExcel } from "@/lib/ibImport";
-import { fetchNotifyEmail, setNotifyEmail } from "@/lib/auth";
+import { fetchNotifyEmail, setNotifyEmail, fetchTelegramChatId, setTelegramChatId } from "@/lib/auth";
 
 const EXCEL_EXTENSION = /\.xlsx?$/i;
 
@@ -279,6 +279,8 @@ export default function SettingsPage() {
 
       <EmailDigestCard />
 
+      <TelegramAlertsCard />
+
       <Card>
         <CardTitle>Backup &amp; restore</CardTitle>
         <div className="flex flex-wrap gap-2">
@@ -404,6 +406,87 @@ function EmailDigestCard() {
       </div>
       {error && <p className="mt-2 text-xs text-rose-400">{error}</p>}
       {!error && saved && <p className="mt-2 text-xs text-emerald-400">Digest enabled for {saved}.</p>}
+    </Card>
+  );
+}
+
+function TelegramAlertsCard() {
+  const [chatId, setChatId] = useState("");
+  const [saved, setSaved] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const current = await fetchTelegramChatId();
+        if (!cancelled) {
+          setChatId(current ?? "");
+          setSaved(current);
+        }
+      } catch {
+        if (!cancelled) setError("Couldn't load your current Telegram alert setting.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    try {
+      const trimmed = chatId.trim();
+      await setTelegramChatId(trimmed.length > 0 ? trimmed : null);
+      setSaved(trimmed.length > 0 ? trimmed : null);
+    } catch {
+      setError("Couldn't save your Telegram chat ID. Try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardTitle>Telegram alerts</CardTitle>
+      <p className="text-xs text-neutral-500 mb-3">
+        Get a Telegram message whenever a watchlist stock moves ±10% intraday versus the previous
+        close. Message{" "}
+        <a
+          href="https://t.me/userinfobot"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline hover:text-neutral-300"
+        >
+          @userinfobot
+        </a>{" "}
+        on Telegram to get your numeric chat ID, then paste it below. Leave blank to turn off.
+      </p>
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          inputMode="numeric"
+          value={chatId}
+          onChange={(e) => setChatId(e.target.value)}
+          disabled={loading}
+          placeholder="123456789"
+          className="w-64 rounded-md bg-neutral-950 border border-neutral-700 px-2.5 py-2 text-sm text-white disabled:opacity-50"
+        />
+        <button
+          onClick={handleSave}
+          disabled={loading || saving || chatId.trim() === (saved ?? "")}
+          className="px-3 py-2 rounded-md text-sm font-medium bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+      </div>
+      {error && <p className="mt-2 text-xs text-rose-400">{error}</p>}
+      {!error && saved && <p className="mt-2 text-xs text-emerald-400">Alerts enabled for chat ID {saved}.</p>}
     </Card>
   );
 }

@@ -91,6 +91,24 @@ export async function setNotifyEmail(email: string | null) {
   if (error) throw error;
 }
 
+export async function fetchTelegramChatId(): Promise<string | null> {
+  const { data, error } = await supabase.from("profiles").select("telegram_chat_id").maybeSingle();
+  if (error) throw error;
+  return (data?.telegram_chat_id as string | null) ?? null;
+}
+
+export async function setTelegramChatId(chatId: string | null) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+  const { error } = await supabase
+    .from("profiles")
+    .update({ telegram_chat_id: chatId })
+    .eq("id", user.id);
+  if (error) throw error;
+}
+
 export async function pushRemoteState(state: PortfolioState) {
   const {
     data: { user },
