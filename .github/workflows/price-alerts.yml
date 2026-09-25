@@ -1,0 +1,18 @@
+name: Price alerts
+
+on:
+  schedule:
+    # Every 15 minutes. GitHub disables scheduled workflows automatically
+    # after 60 days without any commits to the repository - push something
+    # (even unrelated) before then to keep it alive.
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  check-prices:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call price-alerts endpoint
+        run: |
+          curl -sf -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://portfolio-aksk1.vercel.app/api/price-alerts
