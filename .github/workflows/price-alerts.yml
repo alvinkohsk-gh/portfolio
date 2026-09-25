@@ -14,5 +14,12 @@ jobs:
     steps:
       - name: Call price-alerts endpoint
         run: |
-          curl -sf -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+          # -L follows Vercel's redirect once the bypass header/cookie is
+          # accepted; --fail-with-body surfaces the real error body (instead
+          # of a bare non-zero exit) if the deployment protection or
+          # CRON_SECRET check ever rejects the request again.
+          curl -sf -L --fail-with-body \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "x-vercel-protection-bypass: ${{ secrets.VERCEL_PROTECTION_BYPASS }}" \
+            -H "x-vercel-set-bypass-cookie: true" \
             https://portfolio-aksk1.vercel.app/api/price-alerts
