@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { usePortfolio } from "@/lib/PortfolioProvider";
 import { Holding, PositionTarget } from "@/lib/types";
@@ -305,7 +306,13 @@ export function HoldingsTable({
                     >
                       <td className="px-4 sm:px-5 py-3">
                         <div className="font-medium text-white flex items-center gap-1.5">
-                          {h.symbol}
+                          <Link
+                            href={`/transactions?symbol=${encodeURIComponent(h.symbol)}`}
+                            className="hover:text-emerald-400 hover:underline"
+                            title={`View transactions for ${h.symbol}`}
+                          >
+                            {h.symbol}
+                          </Link>
                           {h.priceCurrencyMismatch && (
                             <span
                               title={`Price quoted in ${h.priceCurrency}, not the currency this symbol normally trades in. This usually means the ticker resolved to the wrong company on the wrong exchange - check the symbol (e.g. add ".SI") and every number in this row.`}

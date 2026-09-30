@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { usePortfolio } from "@/lib/PortfolioProvider";
 import {
   activeCurrency,
@@ -24,11 +25,30 @@ const typeStyles: Record<Transaction["type"], string> = {
 };
 
 export default function TransactionsPage() {
+  return (
+    <Suspense fallback={null}>
+      <TransactionsPageContent />
+    </Suspense>
+  );
+}
+
+function TransactionsPageContent() {
   const { state, addTransaction, updateTransaction, deleteTransaction } = usePortfolio();
+  const searchParams = useSearchParams();
+  const symbolParam = searchParams.get("symbol");
   const [modalOpen, setModalOpen] = useState(false);
   const [calculatorOpen, setCalculatorOpen] = useState(false);
   const [editing, setEditing] = useState<Transaction | null>(null);
-  const [filterSymbol, setFilterSymbol] = useState<string>("ALL");
+  const [filterSymbol, setFilterSymbol] = useState<string>(symbolParam ?? "ALL");
+  // Clicking a different symbol's link while already on this page navigates
+  // client-side without remounting, so the initial useState value above
+  // wouldn't pick up the new symbol - adjust state during render (React's
+  // recommended alternative to an effect here) whenever the URL param changes.
+  const [appliedSymbolParam, setAppliedSymbolParam] = useState(symbolParam);
+  if (symbolParam !== appliedSymbolParam) {
+    setAppliedSymbolParam(symbolParam);
+    setFilterSymbol(symbolParam ?? "ALL");
+  }
 
   const symbols = useMemo(() => allSymbols(state), [state]);
   const accountValue = useMemo(() => {
