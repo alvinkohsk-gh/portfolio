@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "mcp__Supabase__*"
+      "mcp__Supabase__*",
+      "mcp__fd6fcd8c-6343-44f8-82c5-c9a05b4839d7__*"
     ]
   }
 }
