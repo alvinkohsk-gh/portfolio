@@ -385,7 +385,9 @@ function EmailDigestCard() {
       <p className="text-xs text-neutral-500 mb-3">
         Get a twice-daily email (~8am and ~6pm SGT) summarizing new headlines for your watchlist -
         the same scan as the Announcements page, but delivered automatically and limited to items
-        you haven&apos;t already seen. Leave blank to turn it off.
+        you haven&apos;t already seen. On the 1st of each month (~8am SGT) you&apos;ll also get last
+        month&apos;s portfolio report, skipped if you had no transactions. This is also where the
+        Reports page sends reports. Leave blank to turn all of these off.
       </p>
       <div className="flex items-center gap-2">
         <input

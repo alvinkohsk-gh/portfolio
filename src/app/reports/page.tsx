@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -13,10 +13,14 @@ import {
   periodLabel,
   periodRange,
   ReportPeriod,
+  reportToCsv,
   scopedToPortfolio,
   shiftAnchor,
   todayIso,
+  transactionTotal,
 } from "@/lib/portfolio";
+import { fetchNotifyEmail } from "@/lib/auth";
+import { supabase } from "@/lib/supabaseClient";
 import { ALL_PORTFOLIOS, Transaction } from "@/lib/types";
 import {
   formatCurrency,
@@ -38,11 +42,6 @@ const typeStyles: Record<Transaction["type"], string> = {
   SELL: "bg-rose-500/15 text-rose-400",
   DIVIDEND: "bg-blue-500/15 text-blue-400",
 };
-
-function csvCell(value: string | number): string {
-  const s = String(value);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
 
 function StatCard({
   label,
@@ -84,28 +83,51 @@ export default function ReportsPage() {
   const net = report.realizedGain + report.dividends;
   const closedLots = report.realizedEvents.length;
 
+  // undefined = still loading, null = none saved in Settings.
+  const [notifyEmail, setNotifyEmail] = useState<string | null | undefined>(undefined);
+  const [emailStatus, setEmailStatus] = useState<
+    | ({ key: string } & ({ kind: "sending" } | { kind: "sent"; to: string } | { kind: "error"; message: string }))
+    | null
+  >(null);
+  const reportKey = `${period}|${start}|${state.activePortfolioId}`;
+  const visibleEmailStatus = emailStatus?.key === reportKey ? emailStatus : null;
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchNotifyEmail()
+      .then((email) => !cancelled && setNotifyEmail(email))
+      .catch(() => !cancelled && setNotifyEmail(null));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function emailReport() {
+    const key = reportKey;
+    setEmailStatus({ key, kind: "sending" });
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Your session has expired. Sign in again.");
+      const res = await fetch("/api/report-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ period, anchor, portfolioId: state.activePortfolioId }),
+      });
+      const body: { sentTo?: string; error?: string } = await res.json().catch(() => ({}));
+      if (!res.ok || !body.sentTo) throw new Error(body.error ?? "Couldn't send the email.");
+      setEmailStatus({ key, kind: "sent", to: body.sentTo });
+    } catch (err) {
+      setEmailStatus({
+        key,
+        kind: "error",
+        message: err instanceof Error ? err.message : "Couldn't send the email.",
+      });
+    }
+  }
+
   function exportCsv() {
-    const header = ["Date", "Portfolio", "Type", "Symbol", "Name", "Quantity", "Price", "Fees", "Total", "Realized"];
-    const rows = report.transactions.map((t) => {
-      const total =
-        t.type === "DIVIDEND"
-          ? t.price
-          : t.quantity * t.price + (t.fees ?? 0) * (t.type === "BUY" ? 1 : -1);
-      const realized = report.realizedByTxId[t.id];
-      return [
-        t.date,
-        portfolioName(t.portfolioId),
-        t.type,
-        t.symbol,
-        t.name ?? "",
-        t.quantity,
-        t.price,
-        t.fees ?? 0,
-        Number(total.toFixed(2)),
-        realized != null ? Number(realized.toFixed(2)) : "",
-      ];
-    });
-    const csv = [header, ...rows].map((r) => r.map(csvCell).join(",")).join("\n");
+    const csv = reportToCsv(report, portfolioName);
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     const a = document.createElement("a");
     a.href = url;
@@ -169,6 +191,30 @@ export default function ReportsPage() {
           aria-label="Jump to date"
           className="ml-auto rounded-md bg-neutral-900 border border-neutral-700 px-2.5 py-1.5 text-sm text-white [color-scheme:dark]"
         />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+        <button
+          onClick={emailReport}
+          disabled={!notifyEmail || visibleEmailStatus?.kind === "sending"}
+          className="px-3 py-1.5 rounded-md font-medium bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-40 disabled:hover:bg-emerald-600"
+        >
+          {visibleEmailStatus?.kind === "sending" ? "Sending…" : "Email this report"}
+        </button>
+        {visibleEmailStatus?.kind === "sent" ? (
+          <span className="text-emerald-400">Sent to {visibleEmailStatus.to}</span>
+        ) : visibleEmailStatus?.kind === "error" ? (
+          <span className="text-rose-400">{visibleEmailStatus.message}</span>
+        ) : notifyEmail ? (
+          <span className="text-neutral-500">to {notifyEmail}</span>
+        ) : notifyEmail === null ? (
+          <span className="text-neutral-500">
+            <Link href="/settings" className="text-neutral-300 underline hover:text-white">
+              Set an email under Settings → Email digest
+            </Link>{" "}
+            to send reports.
+          </span>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -361,10 +407,7 @@ export default function ReportsPage() {
               <tbody>
                 {report.transactions.map((t) => {
                   const txCurrency = currencyForPortfolio(state, t.portfolioId);
-                  const total =
-                    t.type === "DIVIDEND"
-                      ? t.price
-                      : t.quantity * t.price + (t.fees ?? 0) * (t.type === "BUY" ? 1 : -1);
+                  const total = transactionTotal(t);
                   const realized = report.realizedByTxId[t.id];
                   return (
                     <tr key={t.id} className="border-b border-neutral-900 last:border-0 hover:bg-neutral-900/40">
