@@ -13,12 +13,51 @@ interface WatchlistItem {
   name?: string;
 }
 
+/** An Announcement, or a headline from the Watchlist Wire scan (whose
+ * sources are free-form publisher names rather than the fixed feed list). */
+type DigestItem = Omit<Announcement, "source"> & { source: string };
+
+interface WireHeadline {
+  title?: string;
+  source?: string;
+  url?: string;
+  summary?: string;
+  publishedAt?: string;
+}
+
+/** Headlines from the twice-daily Watchlist Wire scan, which is written
+ * straight into watchlist_news by a job outside this codebase. Shared across
+ * users, so each digest picks out its own watchlist's symbols. */
+async function fetchWireHeadlines(
+  supabaseAdmin: ReturnType<typeof getSupabaseAdmin>
+): Promise<Map<string, DigestItem[]>> {
+  const { data, error } = await supabaseAdmin
+    .from("watchlist_news")
+    .select("symbol, headlines, updated_at");
+  if (error) throw error;
+  const bySymbol = new Map<string, DigestItem[]>();
+  for (const row of data ?? []) {
+    const headlines = Array.isArray(row.headlines) ? (row.headlines as WireHeadline[]) : [];
+    const items = headlines
+      .filter((h) => h?.title)
+      .map((h) => ({
+        date: (h.publishedAt || String(row.updated_at ?? "")).slice(0, 10),
+        title: h.title!,
+        source: h.source ? `${h.source} · Watchlist Wire` : "Watchlist Wire",
+        link: h.url,
+        summary: h.summary,
+      }));
+    if (items.length > 0) bySymbol.set(String(row.symbol).toUpperCase(), items);
+  }
+  return bySymbol;
+}
+
 // Caps keep one very chatty stock (or a large watchlist) from producing a
 // single unreadable wall-of-links email.
 const MAX_ITEMS_PER_SYMBOL = 5;
 const MAX_ITEMS_PER_EMAIL = 40;
 
-function itemKey(item: Announcement): string {
+function itemKey(item: DigestItem): string {
   const basis = item.link || item.title;
   return createHash("sha256").update(basis).digest("hex").slice(0, 32);
 }
@@ -27,7 +66,7 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 }
 
-function renderDigestHtml(bySymbol: Map<string, Announcement[]>): string {
+function renderDigestHtml(bySymbol: Map<string, DigestItem[]>): string {
   const sections = [...bySymbol.entries()]
     .map(([symbol, items]) => {
       const rows = items
@@ -54,7 +93,7 @@ function renderDigestHtml(bySymbol: Map<string, Announcement[]>): string {
     <p style="font-size:12px;color:#6b7280;margin:0 0 20px;">New items since your last digest, across your watchlist.</p>
     ${sections}
     <p style="font-size:11px;color:#9ca3af;margin-top:24px;border-top:1px solid #e5e7eb;padding-top:12px;">
-      Automated scan of public sources (SEC EDGAR, Nasdaq, Yahoo Finance, Google News, SGX) - not investment advice,
+      Automated scan of public sources (SEC EDGAR, Nasdaq, Yahoo Finance, Google News, SGX) plus the Watchlist Wire news scan - not investment advice,
       and coverage may be incomplete. Manage your digest email address in Settings.
     </p>
   </div>`;
@@ -86,7 +125,7 @@ export async function GET(req: NextRequest) {
   const resend = new Resend(resendKey);
   const supabaseAdmin = getSupabaseAdmin();
 
-  // The monthly report rides on this cron's 00:00 UTC (8am SGT) run on the
+  // The monthly report rides on this cron's 01:00 UTC (9am SGT) run on the
   // 1st rather than a cron entry of its own. It runs first and catches its
   // own errors, so the digest and the monthly report can't block each other.
   const now = new Date();
@@ -110,6 +149,15 @@ export async function GET(req: NextRequest) {
   const targets = (profiles ?? []).filter(
     (p): p is { id: string; notify_email: string } => !!p.notify_email
   );
+
+  // A Wire outage shouldn't cost users the rest of their digest.
+  let wireHeadlines = new Map<string, DigestItem[]>();
+  let wireError: string | undefined;
+  try {
+    wireHeadlines = await fetchWireHeadlines(supabaseAdmin);
+  } catch (err) {
+    wireError = err instanceof Error ? err.message : String(err);
+  }
 
   const summary: Array<{ userId: string; sent: boolean; newItems: number; error?: string }> = [];
 
@@ -143,16 +191,22 @@ export async function GET(req: NextRequest) {
       if (sentError) throw sentError;
       const sentKeys = new Set((alreadySent ?? []).map((r) => `${r.symbol}:${r.item_key}`));
 
-      const bySymbol = new Map<string, Announcement[]>();
+      const bySymbol = new Map<string, DigestItem[]>();
       const toRecord: { user_id: string; symbol: string; item_key: string }[] = [];
       let totalNew = 0;
 
       for (const symbol of symbols) {
-        const items = announcements[symbol] ?? [];
-        const fresh: Announcement[] = [];
+        // Wire headlines first: they're the hand-picked, summarized ones.
+        const items: DigestItem[] = [
+          ...(wireHeadlines.get(symbol.toUpperCase()) ?? []),
+          ...(announcements[symbol] ?? []),
+        ];
+        const fresh: DigestItem[] = [];
         for (const item of items) {
           const key = itemKey(item);
           if (sentKeys.has(`${symbol}:${key}`)) continue;
+          // The Wire and the feeds can surface the same article.
+          sentKeys.add(`${symbol}:${key}`);
           fresh.push(item);
           toRecord.push({ user_id: target.id, symbol, item_key: key });
           if (fresh.length >= MAX_ITEMS_PER_SYMBOL) break;
@@ -196,5 +250,5 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ usersProcessed: targets.length, results: summary, monthlyReport });
+  return NextResponse.json({ usersProcessed: targets.length, results: summary, monthlyReport, wireError });
 }
