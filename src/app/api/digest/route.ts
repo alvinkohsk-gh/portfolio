@@ -4,6 +4,7 @@ import { Resend } from "resend";
 import { getSupabaseAdmin } from "@/lib/server/supabaseAdmin";
 import { Announcement, fetchAnnouncementsForSymbols } from "@/lib/server/newsSources";
 import { MonthlyReportResult, sendMonthlyReports } from "@/lib/server/reportMailer";
+import { runWireScanIfStale, WireScanResult } from "@/lib/server/wireScan";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -150,6 +151,38 @@ export async function GET(req: NextRequest) {
     (p): p is { id: string; notify_email: string } => !!p.notify_email
   );
 
+  // Every user's watchlist, so news is fetched once per symbol rather than
+  // once per user, and the keyword Wire covers everyone's stocks.
+  const { data: portfolioRows, error: portfoliosError } = await supabaseAdmin
+    .from("portfolio_data")
+    .select("user_id, watchlist:state->watchlist");
+  if (portfoliosError) {
+    return NextResponse.json({ error: portfoliosError.message, monthlyReport }, { status: 500 });
+  }
+  const watchlists = new Map<string, WatchlistItem[]>(
+    (portfolioRows ?? []).map((r) => [
+      r.user_id as string,
+      Array.isArray(r.watchlist) ? (r.watchlist as unknown as WatchlistItem[]).filter((w) => w?.symbol) : [],
+    ])
+  );
+  const allSymbols = new Map<string, WatchlistItem>();
+  for (const list of watchlists.values()) {
+    for (const w of list) if (!allSymbols.has(w.symbol)) allSymbols.set(w.symbol, w);
+  }
+  const symbolList = [...allSymbols.values()];
+  const { announcements, errors: failedSymbols } = await fetchAnnouncementsForSymbols(
+    symbolList.map((w) => w.symbol),
+    symbolList.map((w) => w.name ?? "")
+  );
+
+  // Fill in the Wire from these feeds if the AI scan has stopped running.
+  let wireScan: WireScanResult | { error: string } | undefined;
+  try {
+    wireScan = await runWireScanIfStale(symbolList, announcements, failedSymbols, now);
+  } catch (err) {
+    wireScan = { error: err instanceof Error ? err.message : String(err) };
+  }
+
   // A Wire outage shouldn't cost users the rest of their digest.
   let wireHeadlines = new Map<string, DigestItem[]>();
   let wireError: string | undefined;
@@ -163,26 +196,13 @@ export async function GET(req: NextRequest) {
 
   for (const target of targets) {
     try {
-      const { data: portfolioRow, error: portfolioError } = await supabaseAdmin
-        .from("portfolio_data")
-        .select("state")
-        .eq("user_id", target.id)
-        .maybeSingle();
-      if (portfolioError) throw portfolioError;
-
-      const watchlist: WatchlistItem[] = Array.isArray(
-        (portfolioRow?.state as { watchlist?: unknown })?.watchlist
-      )
-        ? ((portfolioRow!.state as { watchlist: WatchlistItem[] }).watchlist)
-        : [];
+      const watchlist = watchlists.get(target.id) ?? [];
       if (watchlist.length === 0) {
         summary.push({ userId: target.id, sent: false, newItems: 0 });
         continue;
       }
 
       const symbols = watchlist.map((w) => w.symbol);
-      const names = watchlist.map((w) => w.name ?? "");
-      const { announcements } = await fetchAnnouncementsForSymbols(symbols, names);
 
       const { data: alreadySent, error: sentError } = await supabaseAdmin
         .from("digest_sent_items")
@@ -196,7 +216,7 @@ export async function GET(req: NextRequest) {
       let totalNew = 0;
 
       for (const symbol of symbols) {
-        // Wire headlines first: they're the hand-picked, summarized ones.
+        // Wire headlines first: they're the picked-out, flagged ones.
         const items: DigestItem[] = [
           ...(wireHeadlines.get(symbol.toUpperCase()) ?? []),
           ...(announcements[symbol] ?? []),
@@ -250,5 +270,5 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ usersProcessed: targets.length, results: summary, monthlyReport, wireError });
+  return NextResponse.json({ usersProcessed: targets.length, results: summary, monthlyReport, wireScan, wireError });
 }

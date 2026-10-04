@@ -84,7 +84,7 @@ export default function WatchlistWirePage() {
         <div>
           <h1 className="text-xl font-semibold text-white">Watchlist Wire</h1>
           <p className="text-xs text-neutral-500 mt-0.5">
-            Twice-daily automated news scan across every watchlist stock (~8am and ~6pm SGT).
+            Twice-daily automated news scan across every watchlist stock.
           </p>
         </div>
         <div className="flex items-center gap-2">
