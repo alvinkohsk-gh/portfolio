@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Resend } from "resend";
 import { getSupabaseAdmin } from "@/lib/server/supabaseAdmin";
-import { renderReportEmail } from "@/lib/server/reportEmail";
-import { computePeriodReport, periodLabel, periodRange, ReportPeriod, reportToCsv } from "@/lib/portfolio/report";
-import { currencyForPortfolio, scopedToPortfolio } from "@/lib/portfolio/scope";
-import { migrate } from "@/lib/store";
+import { buildReportMessage, getMailer } from "@/lib/server/reportMailer";
+import { ReportPeriod } from "@/lib/portfolio/report";
 import { ALL_PORTFOLIOS, PortfolioState } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -21,9 +18,8 @@ export async function POST(req: NextRequest) {
   const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   if (!token) return error("Not signed in.", 401);
 
-  const resendKey = process.env.RESEND_API_KEY;
-  const fromAddress = process.env.DIGEST_FROM_EMAIL;
-  if (!resendKey || !fromAddress) {
+  const mailer = getMailer();
+  if (!mailer) {
     return error("Email sending isn't set up on the server yet (RESEND_API_KEY / DIGEST_FROM_EMAIL).", 503);
   }
 
@@ -56,34 +52,18 @@ export async function POST(req: NextRequest) {
   if (!to) return error("Add an email address in Settings first.", 400);
   if (!row?.state) return error("No portfolio data to report on yet.", 400);
 
-  const state = migrate(row.state as PortfolioState);
-  if (portfolioId !== ALL_PORTFOLIOS && !state.portfolios.some((p) => p.id === portfolioId)) {
+  const state = row.state as PortfolioState;
+  if (portfolioId !== ALL_PORTFOLIOS && !(state.portfolios ?? []).some((p) => p.id === portfolioId)) {
     return error("Unknown portfolio.", 400);
   }
 
-  const portfolioName = (id: string) => state.portfolios.find((p) => p.id === id)?.name ?? "—";
-  const report = computePeriodReport(scopedToPortfolio(state, portfolioId), periodRange(period, anchor));
-  const label = periodLabel(period, anchor);
-  const { subject, html } = renderReportEmail({
-    report,
-    periodLabel: label,
-    portfolioLabel: portfolioId === ALL_PORTFOLIOS ? "All Portfolios" : portfolioName(portfolioId),
-    currency: portfolioId === ALL_PORTFOLIOS ? state.currency : currencyForPortfolio(state, portfolioId),
-    portfolioName,
-    showPortfolioColumn: portfolioId === ALL_PORTFOLIOS,
-  });
-
-  const { error: sendError } = await new Resend(resendKey).emails.send({
-    from: fromAddress,
+  const message = buildReportMessage(state, period, anchor, portfolioId);
+  const { error: sendError } = await mailer.resend.emails.send({
+    from: mailer.from,
     to,
-    subject,
-    html,
-    attachments: [
-      {
-        filename: `report-${period}-${periodRange(period, anchor).start}.csv`,
-        content: Buffer.from(reportToCsv(report, portfolioName)),
-      },
-    ],
+    subject: message.subject,
+    html: message.html,
+    attachments: [message.attachment],
   });
   if (sendError) return error(`Email failed to send: ${sendError.message}`, 502);
 

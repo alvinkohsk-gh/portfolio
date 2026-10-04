@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import { getSupabaseAdmin } from "@/lib/server/supabaseAdmin";
 import { Announcement, fetchAnnouncementsForSymbols } from "@/lib/server/newsSources";
+import { MonthlyReportResult, sendMonthlyReports } from "@/lib/server/reportMailer";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -85,12 +86,25 @@ export async function GET(req: NextRequest) {
   const resend = new Resend(resendKey);
   const supabaseAdmin = getSupabaseAdmin();
 
+  // The monthly report rides on this cron's 00:00 UTC (8am SGT) run on the
+  // 1st rather than a cron entry of its own. It runs first and catches its
+  // own errors, so the digest and the monthly report can't block each other.
+  const now = new Date();
+  let monthlyReport: MonthlyReportResult | { error: string } | undefined;
+  if (now.getUTCDate() === 1 && now.getUTCHours() < 5) {
+    try {
+      monthlyReport = await sendMonthlyReports(now);
+    } catch (err) {
+      monthlyReport = { error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
   const { data: profiles, error: profilesError } = await supabaseAdmin
     .from("profiles")
     .select("id, notify_email")
     .not("notify_email", "is", null);
   if (profilesError) {
-    return NextResponse.json({ error: profilesError.message }, { status: 500 });
+    return NextResponse.json({ error: profilesError.message, monthlyReport }, { status: 500 });
   }
 
   const targets = (profiles ?? []).filter(
@@ -182,5 +196,5 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ usersProcessed: targets.length, results: summary });
+  return NextResponse.json({ usersProcessed: targets.length, results: summary, monthlyReport });
 }
