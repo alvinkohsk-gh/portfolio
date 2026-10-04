@@ -6,3 +6,4 @@ export * from "./scope";
 export * from "./allocation";
 export * from "./realized";
 export * from "./risk";
+export * from "./report";
