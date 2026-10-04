@@ -219,6 +219,38 @@ export function computePeriodReport(state: PortfolioState, range: DateRange): Pe
   return buildReport(state.transactions, computeRealizedEvents(state), range);
 }
 
+/** Signed cash amount of a transaction: buy cost incl. fees, sell proceeds
+ * after fees, or the dividend amount. */
+export function transactionTotal(t: Transaction): number {
+  if (t.type === "DIVIDEND") return t.price;
+  return t.quantity * t.price + (t.fees ?? 0) * (t.type === "BUY" ? 1 : -1);
+}
+
+function csvCell(value: string | number): string {
+  const s = String(value);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+export function reportToCsv(report: PeriodReport, portfolioName: (id: string) => string): string {
+  const header = ["Date", "Portfolio", "Type", "Symbol", "Name", "Quantity", "Price", "Fees", "Total", "Realized"];
+  const rows = report.transactions.map((t) => {
+    const realized = report.realizedByTxId[t.id];
+    return [
+      t.date,
+      portfolioName(t.portfolioId),
+      t.type,
+      t.symbol,
+      t.name ?? "",
+      t.quantity,
+      t.price,
+      t.fees ?? 0,
+      Number(transactionTotal(t).toFixed(2)),
+      realized != null ? Number(realized.toFixed(2)) : "",
+    ];
+  });
+  return [header, ...rows].map((r) => r.map(csvCell).join(",")).join("\n");
+}
+
 export interface PeriodTrendPoint {
   anchor: string;
   label: string;
